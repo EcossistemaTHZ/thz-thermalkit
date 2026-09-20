@@ -5,10 +5,12 @@ import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { ThermalViewer } from './components/ThermalViewer';
 import { ConfirmModal } from './components/ConfirmModal';
+import { ReceiptBuilder } from './components/ReceiptBuilder';
 import {
   FileUp,
   FileText,
   Type,
+  Receipt,
   Trash2,
   Printer,
   CheckCircle2,
@@ -28,8 +30,11 @@ export const App: React.FC = () => {
   const [widthDots, setWidthDots] = useState<number>(384);
   const [codePage, setCodePage] = useState<number>(3); // CP860 Português
 
-  // Modo de Trabalho: Documento (PDF/IMG/TXT) ou Digitação Direta
-  const [activeTab, setActiveTab] = useState<'file' | 'text'>('file');
+  // Modo de Trabalho: Notinha/Caixa, Documento (PDF/IMG/TXT) ou Texto Livre
+  const [activeTab, setActiveTab] = useState<'receipt' | 'file' | 'text'>('receipt');
+
+  // Estado da Notinha Interativa (PDV / Caixa)
+  const [compiledReceiptText, setCompiledReceiptText] = useState<string>('');
 
   // Estado do Documento
   const [preview, setPreview] = useState<DocumentPreviewDto | null>(null);
@@ -144,9 +149,12 @@ export const App: React.FC = () => {
 
     setIsPrinting(true);
     try {
+      const isDirect = activeTab === 'receipt' || activeTab === 'text';
+      const textToPrint = activeTab === 'receipt' ? compiledReceiptText : directText;
+
       const req: PrintJobRequest = {
         file_path: activeTab === 'file' ? preview?.file_path || null : null,
-        direct_text: activeTab === 'text' ? directText : null,
+        direct_text: isDirect ? textToPrint : null,
         target_transport: selectedPrinter.transport_type,
         target_param: selectedPrinter.target,
         code_page: codePage,
@@ -163,9 +171,20 @@ export const App: React.FC = () => {
     }
   };
 
-  // Prepara objeto virtual de preview para modo Texto Direto
+  // Prepara objeto virtual de preview para modo Notinha ou Texto Direto
   const virtualTextPreview: DocumentPreviewDto | null =
-    activeTab === 'text'
+    activeTab === 'receipt'
+      ? {
+          file_name: 'notinha_caixa.txt',
+          file_path: '',
+          file_size: compiledReceiptText.length,
+          kind: 'text',
+          text_content: compiledReceiptText,
+          preview_image_base64: null,
+          page_count: 1,
+          width_dots: widthDots,
+        }
+      : activeTab === 'text'
       ? {
           file_name: 'recibo_direto.txt',
           file_path: '',
@@ -180,7 +199,8 @@ export const App: React.FC = () => {
 
   const canPrint =
     selectedPrinter !== null &&
-    ((activeTab === 'file' && preview !== null) ||
+    ((activeTab === 'receipt' && compiledReceiptText.trim().length > 0) ||
+      (activeTab === 'file' && preview !== null) ||
       (activeTab === 'text' && directText.trim().length > 0));
 
   // Inserções rápidas no editor de texto
@@ -250,14 +270,22 @@ export const App: React.FC = () => {
         <main className="viewer-panel glass-panel">
           {/* Barra Superior da Área de Impressão */}
           <div className="viewer-header">
-            {/* Seletor de Modo (Documento vs Texto) */}
+            {/* Seletor de Modo (Notinha vs Arquivo vs Texto) */}
             <div className="mode-switch-container">
+              <button
+                className={`mode-tab-btn ${activeTab === 'receipt' ? 'active' : ''}`}
+                onClick={() => setActiveTab('receipt')}
+              >
+                <Receipt size={14} />
+                <span>Gerador de Notinha (PDV)</span>
+              </button>
+
               <button
                 className={`mode-tab-btn ${activeTab === 'file' ? 'active' : ''}`}
                 onClick={() => setActiveTab('file')}
               >
                 <FileText size={14} />
-                <span>Arquivo (PDF / Img / TXT)</span>
+                <span>Arquivo (PDF / Img)</span>
               </button>
 
               <button
@@ -265,7 +293,7 @@ export const App: React.FC = () => {
                 onClick={() => setActiveTab('text')}
               >
                 <Type size={14} />
-                <span>Texto Livre / Recibo</span>
+                <span>Texto Livre</span>
               </button>
             </div>
 
@@ -347,7 +375,20 @@ export const App: React.FC = () => {
           </div>
 
           {/* Área Central: Visualizador da Bobina Térmica ou Editor */}
-          {activeTab === 'file' ? (
+          {activeTab === 'receipt' ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 370px', gap: '16px', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              {/* Painel Interativo de Notinha (Caixa / PDV) */}
+              <ReceiptBuilder
+                widthDots={widthDots}
+                onReceiptChange={setCompiledReceiptText}
+              />
+
+              {/* Prévia em tempo real na Bobina */}
+              <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                <ThermalViewer preview={virtualTextPreview} widthDots={widthDots} />
+              </div>
+            </div>
+          ) : activeTab === 'file' ? (
             preview ? (
               <ThermalViewer preview={preview} widthDots={widthDots} />
             ) : (
@@ -382,7 +423,7 @@ export const App: React.FC = () => {
               </div>
             )
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 390px', gap: '16px', flex: 1, minHeight: 0 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 370px', gap: '16px', flex: 1, minHeight: 0 }}>
               {/* Editor de Texto com Contador de Colunas */}
               <div className="direct-text-wrapper">
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
