@@ -19,9 +19,20 @@ Ferramentas Windows para impressoras térmicas ESC/POS genéricas: descoberta US
 | Raster | GS v 0 |
 | Texto em português | CP860 com `ESC t 3` |
 
-## THZ ThermalKit Desktop
+## THZ ThermalKit Desktop (Tauri v2 + React)
 
-O aplicativo desktop abre TXT, PNG, JPG e PDF, mostra uma prévia em 58 mm e pede confirmação dentro da janela antes de imprimir. A impressão é enviada diretamente para a interface USB da impressora.
+Nova interface desktop moderna construída com **Tauri v2 + React (TypeScript + Vite)**, dark mode com glassmorphism, suporte simultâneo a **USB Direto (`usbprint.sys`)** e **Bluetooth SPP (`BTHENUM`)**, renderizador térmico de bobina 58 mm e emissão de recibos/texto livre ou arquivos (PDF/PNG/JPG/TXT).
+
+Para iniciar em desenvolvimento:
+
+```powershell
+cd desktop
+npm run tauri dev
+```
+
+## THZ ThermalKit Desktop (egui)
+
+Aplicativo desktop clássico em Rust nativo com `egui`:
 
 ```powershell
 cargo run --bin thz-thermalkit

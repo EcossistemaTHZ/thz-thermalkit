@@ -5,6 +5,10 @@ edition = "2021"
 autobins = false
 default-run = "thermal-probe"
 
+[lib]
+name = "thermal_core"
+path = "src/lib.rs"
+
 [[bin]]
 name = "thermal-probe"
 path = "src/next.rs"
