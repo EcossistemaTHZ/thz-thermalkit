@@ -14,7 +14,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
-  Minus
+  Minus,
+  WrapText
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -38,13 +39,13 @@ export const App: React.FC = () => {
   const [directText, setDirectText] = useState<string>(
     '================================\n' +
     '        THZ THERMALKIT          \n' +
-    '     IMPRESSÃO DIRETA ESC/POS   \n' +
+    '    IMPRESSÃO DIRETA ESC/POS    \n' +
     '================================\n\n' +
     'Item                    Qtd   R$\n' +
     '--------------------------------\n' +
-    'Cafe Expresso             1  6,00\n' +
-    'Pao na Chapa              1  7,50\n' +
-    'Agua Mineral              1  4,00\n' +
+    'Cafe Expresso            1  6,00\n' +
+    'Pao na Chapa             1  7,50\n' +
+    'Agua Mineral             1  4,00\n' +
     '--------------------------------\n' +
     'TOTAL:                  R$ 17,50\n\n' +
     'Pagamento: PIX / Dinheiro\n\n' +
@@ -183,6 +184,29 @@ export const App: React.FC = () => {
       (activeTab === 'text' && directText.trim().length > 0));
 
   // Inserções rápidas no editor de texto
+  const maxCols = widthDots === 576 ? 48 : 32;
+
+  const overflowingLines = directText
+    .split('\n')
+    .map((line, idx) => ({ lineNum: idx + 1, len: line.length, text: line }))
+    .filter((x) => x.len > maxCols);
+
+  const autoWrapDirectText = () => {
+    const wrapped = directText
+      .split('\n')
+      .map((line) => {
+        if (line.length <= maxCols) return line;
+        const chunks: string[] = [];
+        for (let i = 0; i < line.length; i += maxCols) {
+          chunks.push(line.slice(i, i + maxCols));
+        }
+        return chunks.join('\n');
+      })
+      .join('\n');
+    setDirectText(wrapped);
+    showToast('success', `Texto formatado para o limite de ${maxCols} colunas!`);
+  };
+
   const insertTimestamp = () => {
     const now = new Date();
     const dateStr = now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR');
@@ -277,6 +301,20 @@ export const App: React.FC = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <button
                   className="btn-secondary"
+                  style={{
+                    padding: '6px 10px',
+                    fontSize: '0.75rem',
+                    color: overflowingLines.length > 0 ? 'var(--accent-warning)' : 'inherit',
+                  }}
+                  onClick={autoWrapDirectText}
+                  title={`Ajustar linhas longas para caberem em ${maxCols} colunas`}
+                >
+                  <WrapText size={13} />
+                  <span>Ajustar ({maxCols} col)</span>
+                </button>
+
+                <button
+                  className="btn-secondary"
                   style={{ padding: '6px 10px', fontSize: '0.75rem' }}
                   onClick={insertTimestamp}
                   title="Inserir data e hora atual"
@@ -345,8 +383,21 @@ export const App: React.FC = () => {
             )
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 390px', gap: '16px', flex: 1, minHeight: 0 }}>
-              {/* Editor de Texto */}
+              {/* Editor de Texto com Contador de Colunas */}
               <div className="direct-text-wrapper">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  <span>Editor ESC/POS • Fonte A (12×24)</span>
+                  {overflowingLines.length > 0 ? (
+                    <span style={{ color: 'var(--accent-warning)', fontWeight: 700 }}>
+                      ⚠️ {overflowingLines.length} linha(s) excedem {maxCols} colunas!
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--accent-usb)', fontWeight: 700 }}>
+                      ✓ 100% alinhado ({maxCols} colunas)
+                    </span>
+                  )}
+                </div>
+
                 <textarea
                   className="direct-textarea"
                   value={directText}
@@ -354,6 +405,34 @@ export const App: React.FC = () => {
                   placeholder="Digite aqui o texto ou recibo para imprimir na bobina térmica..."
                   spellCheck={false}
                 />
+
+                {overflowingLines.length > 0 && (
+                  <div
+                    style={{
+                      padding: '8px 12px',
+                      background: 'rgba(245, 158, 11, 0.1)',
+                      border: '1px solid rgba(245, 158, 11, 0.3)',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.75rem',
+                      color: '#fde68a',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                    }}
+                  >
+                    <span>
+                      ⚠️ Linha {overflowingLines[0].lineNum} possui {overflowingLines[0].len} caracteres (máx: {maxCols}). Na impressora física, o excesso cairá para a linha de baixo!
+                    </span>
+                    <button
+                      className="btn-secondary"
+                      style={{ padding: '4px 8px', fontSize: '0.7rem', flexShrink: 0 }}
+                      onClick={autoWrapDirectText}
+                    >
+                      Ajustar automaticamente
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Prévia em tempo real na Bobina */}

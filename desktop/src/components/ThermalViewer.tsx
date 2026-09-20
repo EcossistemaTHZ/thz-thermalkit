@@ -7,16 +7,32 @@ interface ThermalViewerProps {
   widthDots: number;
 }
 
+export const formatThermalText = (rawText: string, maxCols: number): string => {
+  return rawText
+    .split('\n')
+    .map((line) => {
+      if (line.length <= maxCols) return line;
+      const chunks: string[] = [];
+      for (let i = 0; i < line.length; i += maxCols) {
+        chunks.push(line.slice(i, i + maxCols));
+      }
+      return chunks.join('\n');
+    })
+    .join('\n');
+};
+
 export const ThermalViewer: React.FC<ThermalViewerProps> = ({
   preview,
   widthDots,
 }) => {
+  const maxCols = widthDots === 576 ? 48 : 32;
+
   return (
     <div className="roll-stage-container">
       <div
         className="thermal-paper"
         style={{
-          width: widthDots === 576 ? '480px' : '384px',
+          width: widthDots === 576 ? '460px' : '360px',
         }}
       >
         {/* Serrilha superior de corte manual */}
@@ -26,20 +42,20 @@ export const ThermalViewer: React.FC<ThermalViewerProps> = ({
         <div
           style={{
             borderBottom: '1px dashed rgba(24, 24, 27, 0.25)',
-            paddingBottom: '12px',
-            marginBottom: '16px',
+            paddingBottom: '10px',
+            marginBottom: '14px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            fontSize: '0.7rem',
+            fontSize: '0.68rem',
             color: '#71717a',
-            letterSpacing: '0.05em',
+            letterSpacing: '0.04em',
             textTransform: 'uppercase',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <Scissors size={12} />
-            <span>58 mm / {widthDots} Dots</span>
+            <span>{widthDots === 576 ? '80 mm' : '58 mm'} • {maxCols} colunas</span>
           </div>
           <div>
             {preview ? (
@@ -56,15 +72,17 @@ export const ThermalViewer: React.FC<ThermalViewerProps> = ({
             {preview.kind === 'text' && preview.text_content ? (
               <pre
                 style={{
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
+                  whiteSpace: 'pre',
+                  overflowX: 'hidden',
                   fontFamily: 'var(--font-mono)',
-                  fontSize: '0.8rem',
-                  lineHeight: '1.4',
+                  fontSize: widthDots === 576 ? '0.72rem' : '0.82rem',
+                  lineHeight: '1.38',
                   color: 'var(--paper-text)',
+                  letterSpacing: '0.01em',
+                  wordBreak: 'break-all',
                 }}
               >
-                {preview.text_content}
+                {formatThermalText(preview.text_content, maxCols)}
               </pre>
             ) : preview.preview_image_base64 ? (
               <div>
