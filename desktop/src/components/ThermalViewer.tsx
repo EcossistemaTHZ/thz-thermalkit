@@ -1,25 +1,12 @@
 import React from 'react';
 import { DocumentPreviewDto } from '../types';
 import { FileText, Scissors } from 'lucide-react';
+import { formatThermalText } from '../utils/receiptFormatter';
 
 interface ThermalViewerProps {
   preview: DocumentPreviewDto | null;
   widthDots: number;
 }
-
-export const formatThermalText = (rawText: string, maxCols: number): string => {
-  return rawText
-    .split('\n')
-    .map((line) => {
-      if (line.length <= maxCols) return line;
-      const chunks: string[] = [];
-      for (let i = 0; i < line.length; i += maxCols) {
-        chunks.push(line.slice(i, i + maxCols));
-      }
-      return chunks.join('\n');
-    })
-    .join('\n');
-};
 
 export const ThermalViewer: React.FC<ThermalViewerProps> = ({
   preview,

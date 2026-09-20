@@ -1,6 +1,6 @@
 /**
  * Utilitários de formatação matemática de texto para bobinas térmicas ESC/POS.
- * Modelo DANFE NFC-e / Cupom Auxiliar de Venda padronizado brasileiro.
+ * Módulo de Comprovante Não Fiscal / Recibo de Venda para operadores de caixa.
  * Garante alinhamento milimétrico em 32 colunas (58 mm) ou 48 colunas (80 mm).
  */
 
@@ -8,18 +8,16 @@ export interface ReceiptItem {
   id: string;
   code?: string;
   name: string;
-  unit?: string; // UN, PC, KG, etc.
+  unit?: string; // UN, PC, KG, LT, etc.
   qty: number;
   unitPrice: number;
 }
 
 export interface StoreInfo {
-  name: string; // Razão Social
-  fantasyName?: string;
-  doc: string; // CNPJ
-  ie?: string; // Inscrição Estadual
-  address: string;
+  name: string; // Nome da Loja / Fantasia
+  doc: string;  // CNPJ ou CPF
   phone?: string;
+  address: string;
 }
 
 export interface ConsumerInfo {
@@ -32,13 +30,12 @@ export interface ReceiptData {
   store: StoreInfo;
   title?: string;
   orderNumber: string;
-  serie?: string;
   date: string;
   consumer?: ConsumerInfo;
   items: ReceiptItem[];
   paymentMethod: string;
   discount: number;
-  otherExpenses?: number; // Outras despesas / acréscimos
+  otherExpenses?: number; // Taxa de entrega / outras despesas
   cashReceived?: number;
   notes?: string;
 }
@@ -105,7 +102,7 @@ export function padLine(left: string, right: string, width: number): string {
 }
 
 /**
- * Cria linha divisória com o caractere desejado ('-' padrão de cupom fiscal).
+ * Cria linha divisória com o caractere desejado ('-' padrão de comprovante).
  */
 export function divider(char: string = '-', width: number = 32): string {
   return char.repeat(width);
@@ -122,25 +119,42 @@ export function formatCurrency(value: number): string {
 }
 
 /**
- * Compila a notinha no formato padrão DANFE NFC-e / Cupom de Venda
- * (sem QRCode e sem dados da SEFAZ, pronto para operadores de caixa e não fiscal).
+ * Simula a quebra física de hardware ESC/POS linha a linha
+ */
+export function formatThermalText(rawText: string, maxCols: number): string {
+  return rawText
+    .split('\n')
+    .map((line) => {
+      if (line.length <= maxCols) return line;
+      const chunks: string[] = [];
+      for (let i = 0; i < line.length; i += maxCols) {
+        chunks.push(line.slice(i, i + maxCols));
+      }
+      return chunks.join('\n');
+    })
+    .join('\n');
+}
+
+/**
+ * Compila a notinha no formato de COMPROVANTE NÃO FISCAL de venda/atendimento.
+ * Totalmente descaracterizado de NFC-e ou terminologia fiscal.
  */
 export function buildReceiptText(data: ReceiptData, width: number = 32): string {
   const lines: string[] = [];
 
   // ==========================================
-  // 1. CABEÇALHO DA EMPRESA
+  // 1. CABEÇALHO DO ESTABELECIMENTO
   // ==========================================
   if (data.store.name) {
     lines.push(...wrapCenterText(data.store.name.toUpperCase(), width));
   }
 
-  // CNPJ e IE
-  const cnpjClean = data.store.doc ? `CNPJ:${data.store.doc}` : '';
-  const ieClean = data.store.ie ? `IE:${data.store.ie}` : '';
-  if (cnpjClean || ieClean) {
-    const docLine = [cnpjClean, ieClean].filter(Boolean).join(' ');
-    lines.push(...wrapCenterText(docLine, width));
+  // CNPJ/CPF e Telefone
+  const docClean = data.store.doc ? `CNPJ/CPF: ${data.store.doc}` : '';
+  const phoneClean = data.store.phone ? `TEL: ${data.store.phone}` : '';
+  if (docClean || phoneClean) {
+    const infoLine = [docClean, phoneClean].filter(Boolean).join(' ');
+    lines.push(...wrapCenterText(infoLine, width));
   }
 
   // Endereço
@@ -151,21 +165,19 @@ export function buildReceiptText(data: ReceiptData, width: number = 32): string 
   lines.push(divider('-', width));
 
   // ==========================================
-  // 2. TÍTULO DO DOCUMENTO
+  // 2. TÍTULO DO COMPROVANTE NÃO FISCAL
   // ==========================================
-  const docTitle =
-    data.title ||
-    'DANFE NFC-e - Documento Auxiliar\nda Nota Fiscal Eletrônica para Consumidor';
+  const docTitle = data.title || 'COMPROVANTE NÃO FISCAL';
   for (const part of docTitle.split('\n')) {
-    lines.push(...wrapCenterText(part, width));
+    lines.push(...wrapCenterText(part.toUpperCase(), width));
   }
 
   lines.push(divider('-', width));
 
   // ==========================================
-  // 3. DETALHE DA VENDA (TABELA DE ITENS)
+  // 3. DETALHE DOS ITENS DO PEDIDO
   // ==========================================
-  lines.push(centerText('DETALHE DA VENDA', width));
+  lines.push(centerText('DETALHE DO PEDIDO', width));
 
   if (width === 32) {
     lines.push(padLine('CODIGO', 'DESCRICAO', width));
@@ -197,7 +209,6 @@ export function buildReceiptText(data: ReceiptData, width: number = 32): string 
       if (headerLine.length <= width) {
         lines.push(headerLine);
       } else {
-        // Quebra descrição longa
         lines.push(headerLine.slice(0, width));
         const rest = headerLine.slice(width);
         if (rest.trim()) lines.push(rest.slice(0, width));
@@ -227,7 +238,7 @@ export function buildReceiptText(data: ReceiptData, width: number = 32): string 
   }
 
   if (data.otherExpenses && data.otherExpenses > 0) {
-    lines.push(padLine('OUTRAS DESPESAS', formatCurrency(data.otherExpenses), width));
+    lines.push(padLine('TAXA DE ENTREGA / OUTROS', formatCurrency(data.otherExpenses), width));
   }
 
   const total = Math.max(0, subtotal - (data.discount || 0) + (data.otherExpenses || 0));
@@ -256,42 +267,39 @@ export function buildReceiptText(data: ReceiptData, width: number = 32): string 
   lines.push(divider('-', width));
 
   // ==========================================
-  // 6. DADOS DO CONSUMIDOR
+  // 6. DADOS DO CLIENTE
   // ==========================================
-  lines.push(centerText('CONSUMIDOR', width));
-
   if (data.consumer?.name && data.consumer.name.trim()) {
+    lines.push(centerText('DADOS DO CLIENTE', width));
     lines.push(padLine('NOME:', data.consumer.name.toUpperCase(), width));
     if (data.consumer.doc) {
-      lines.push(padLine('CONSUMIDOR CNPJ/CPF:', data.consumer.doc, width));
+      lines.push(padLine('CPF/CNPJ:', data.consumer.doc, width));
     }
     if (data.consumer.address) {
       lines.push(...wrapCenterText(data.consumer.address.toUpperCase(), width));
     }
-  } else {
-    lines.push(centerText('CONSUMIDOR NAO IDENTIFICADO', width));
+    lines.push(divider('-', width));
   }
 
-  lines.push(divider('-', width));
-
   // ==========================================
-  // 7. EMISSÃO / PEDIDO
+  // 7. CONTROLE / ATENDIMENTO
   // ==========================================
-  const serieStr = data.serie || '0';
-  lines.push(centerText(`No ${data.orderNumber} Serie ${serieStr}`, width));
-  lines.push(centerText(`${data.date} - Via Consumidor`, width));
+  lines.push(centerText(`PEDIDO / CONTROLE Nº ${data.orderNumber}`, width));
+  lines.push(centerText(`${data.date} - 1ª Via`, width));
 
   lines.push(divider('-', width));
 
   // ==========================================
-  // 8. RODAPÉ / AVISOS
+  // 8. RODAPÉ
   // ==========================================
   if (data.notes && data.notes.trim()) {
     lines.push(...wrapCenterText(data.notes.toUpperCase(), width));
   } else {
-    lines.push(centerText('EMITIDO PARA TESTE DE IMPRESSAO', width));
-    lines.push(centerText('SEM VALOR FISCAL', width));
+    lines.push(centerText('OBRIGADO PELA PREFERENCIA!', width));
+    lines.push(centerText('VOLTE SEMPRE!', width));
   }
+
+  lines.push(centerText('*** NAO E DOCUMENTO FISCAL ***', width));
 
   return lines.join('\n');
 }

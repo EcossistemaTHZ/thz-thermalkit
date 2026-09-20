@@ -32,7 +32,7 @@ interface ReceiptBuilderProps {
   onReceiptChange: (compiledText: string) => void;
 }
 
-const STORAGE_KEY_STORE = 'thz_thermalkit_danfe_store';
+const STORAGE_KEY_STORE = 'thz_thermalkit_nonfiscal_store';
 
 export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
   widthDots,
@@ -40,7 +40,7 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
 }) => {
   const maxCols = widthDots === 576 ? 48 : 32;
 
-  // 1. Dados do Estabelecimento (com persistência em LocalStorage)
+  // 1. Dados do Estabelecimento (persistidos em LocalStorage)
   const [store, setStore] = useState<StoreInfo>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_STORE);
@@ -49,57 +49,63 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
       // Ignora erro
     }
     return {
-      name: 'RAZAO SOCIAL',
-      doc: '99.999.999/9999-99',
-      ie: '12345678',
-      address: 'RUA PRINCIPAL, 123 - CENTRO - CAPITAL - RS',
+      name: 'PADARIA & CONFEITARIA CENTRAL',
+      doc: '12.345.678/0001-90',
+      phone: '(11) 98765-4321',
+      address: 'Rua das Flores, 120 - Centro - Cidade - UF',
     };
   });
 
   const [isStoreSaved, setIsStoreSaved] = useState(false);
   const [isStoreExpanded, setIsStoreExpanded] = useState(false);
 
-  // 2. Título do Documento
-  const [docTitle, setDocTitle] = useState(
-    'DANFE NFC-e - Documento Auxiliar\nda Nota Fiscal Eletrônica para Consumidor'
-  );
+  // 2. Tipo do Documento Não Fiscal
+  const [docTitle, setDocTitle] = useState('COMPROVANTE NÃO FISCAL');
 
-  // 3. Dados da Emissão e Consumidor
-  const [orderNumber, setOrderNumber] = useState('1234');
-  const [serie, setSerie] = useState('0');
+  // 3. Controle / Pedido e Data
+  const [orderNumber, setOrderNumber] = useState('1042');
   const [date, setDate] = useState(() => {
     const now = new Date();
     return now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR');
   });
 
+  // 4. Identificação do Cliente (Opcional)
   const [consumer, setConsumer] = useState<ConsumerInfo>({
-    name: 'DESTINATARIO TESTE',
-    doc: '99.999.999/9999-99',
-    address: 'RUA PRINCIPAL, 123, CENTRO, CAPITAL - RS',
+    name: '',
+    doc: '',
+    address: '',
   });
   const [isConsumerExpanded, setIsConsumerExpanded] = useState(false);
 
-  // 4. Lista de Itens do Pedido (padrão igual ao modelo fornecido)
+  // 5. Lista de Itens do Pedido
   const [items, setItems] = useState<ReceiptItem[]>([
     {
       id: '1',
-      code: '1111111111111',
-      name: 'TESTE IMPRESSAO',
-      unit: 'PC',
-      qty: 1,
-      unitPrice: 12.0,
+      code: '001',
+      name: 'Cafe Expresso',
+      unit: 'UN',
+      qty: 2,
+      unitPrice: 6.0,
     },
     {
       id: '2',
-      code: '2222222222222',
-      name: 'ITEM COM DESCRICAO MUITO LONGA',
-      unit: 'PC',
-      qty: 100,
-      unitPrice: 0.01,
+      code: '002',
+      name: 'Pao na Chapa',
+      unit: 'UN',
+      qty: 1,
+      unitPrice: 7.5,
+    },
+    {
+      id: '3',
+      code: '003',
+      name: 'Agua Mineral',
+      unit: 'UN',
+      qty: 1,
+      unitPrice: 4.0,
     },
   ]);
 
-  // Campos para novo item
+  // Campos para cadastro de novo item
   const [newItemCode, setNewItemCode] = useState('');
   const [newItemName, setNewItemName] = useState('');
   const [newItemUnit, setNewItemUnit] = useState('UN');
@@ -107,14 +113,14 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
   const [newItemPrice, setNewItemPrice] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
 
-  // 5. Totais e Pagamento
-  const [paymentMethod, setPaymentMethod] = useState('Cartão de Crédito - Visa');
-  const [discount, setDiscount] = useState<number>(0.06);
-  const [otherExpenses, setOtherExpenses] = useState<number>(8.0);
-  const [cashReceived, setCashReceived] = useState<string>('21,00');
-  const [notes, setNotes] = useState('NFC-E EMITIDO PARA TESTE DE IMPRESSAO');
+  // 6. Valores e Pagamento
+  const [paymentMethod, setPaymentMethod] = useState('PIX');
+  const [discount, setDiscount] = useState<number>(0);
+  const [otherExpenses, setOtherExpenses] = useState<number>(0);
+  const [cashReceived, setCashReceived] = useState<string>('');
+  const [notes, setNotes] = useState('Obrigado pela preferencia! Volte sempre.');
 
-  // Salvar dados da empresa no localStorage
+  // Salvar dados da loja no localStorage
   const handleSaveStore = () => {
     try {
       localStorage.setItem(STORAGE_KEY_STORE, JSON.stringify(store));
@@ -131,7 +137,6 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
       store,
       title: docTitle,
       orderNumber,
-      serie,
       date,
       consumer: consumer.name || consumer.doc ? consumer : undefined,
       items,
@@ -148,7 +153,6 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
     store,
     docTitle,
     orderNumber,
-    serie,
     date,
     consumer,
     items,
@@ -170,7 +174,7 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
     const qtyNum = parseFloat(newItemQty.replace(',', '.')) || 1;
     const nextCode =
       newItemCode.trim() ||
-      (items.length + 1).toString().padStart(6, '0');
+      (items.length + 1).toString().padStart(3, '0');
 
     const newItem: ReceiptItem = {
       id: Date.now().toString(),
@@ -227,30 +231,38 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
     nameInputRef.current?.focus();
   };
 
-  // Restaurar Exemplo DANFE NFC-e
+  // Restaurar Exemplo de Venda
   const handleLoadExample = () => {
     setItems([
       {
         id: '1',
-        code: '1111111111111',
-        name: 'TESTE IMPRESSAO',
-        unit: 'PC',
-        qty: 1,
-        unitPrice: 12.0,
+        code: '001',
+        name: 'Cafe Expresso',
+        unit: 'UN',
+        qty: 2,
+        unitPrice: 6.0,
       },
       {
         id: '2',
-        code: '2222222222222',
-        name: 'ITEM COM DESCRICAO MUITO LONGA',
-        unit: 'PC',
-        qty: 100,
-        unitPrice: 0.01,
+        code: '002',
+        name: 'Pao na Chapa',
+        unit: 'UN',
+        qty: 1,
+        unitPrice: 7.5,
+      },
+      {
+        id: '3',
+        code: '003',
+        name: 'Agua Mineral',
+        unit: 'UN',
+        qty: 1,
+        unitPrice: 4.0,
       },
     ]);
-    setDiscount(0.06);
-    setOtherExpenses(8.0);
-    setPaymentMethod('Cartão de Crédito - Visa');
-    setCashReceived('21,00');
+    setDiscount(0);
+    setOtherExpenses(0);
+    setPaymentMethod('PIX');
+    setCashReceived('');
   };
 
   // Cálculos de Totais
@@ -261,7 +273,7 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
 
   return (
     <div className="receipt-builder-container">
-      {/* 1. SEÇÃO DO EMISSOR / EMPRESA */}
+      {/* 1. CABEÇALHO DO ESTABELECIMENTO */}
       <div className="receipt-section-box">
         <div
           className="receipt-section-header"
@@ -270,9 +282,9 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Store size={16} color="var(--accent-bt)" />
-            <span style={{ fontWeight: 700, fontSize: '0.875rem' }}>Empresa / Razão Social</span>
+            <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Identificação do Estabelecimento</span>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              ({store.name || 'RAZAO SOCIAL'})
+              ({store.name || 'Nome da Loja'})
             </span>
           </div>
 
@@ -289,35 +301,35 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
         {isStoreExpanded && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
             <div>
-              <label className="pos-label">Razão Social</label>
+              <label className="pos-label">Nome da Empresa / Fantasia</label>
               <input
                 className="pos-input"
                 type="text"
                 value={store.name}
                 onChange={(e) => setStore({ ...store, name: e.target.value })}
-                placeholder="Ex: RAZAO SOCIAL DA EMPRESA"
+                placeholder="Ex: PADARIA & CONFEITARIA CENTRAL"
               />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
               <div>
-                <label className="pos-label">CNPJ</label>
+                <label className="pos-label">CNPJ ou CPF</label>
                 <input
                   className="pos-input"
                   type="text"
                   value={store.doc}
                   onChange={(e) => setStore({ ...store, doc: e.target.value })}
-                  placeholder="99.999.999/9999-99"
+                  placeholder="12.345.678/0001-90"
                 />
               </div>
               <div>
-                <label className="pos-label">Inscrição Estadual (IE)</label>
+                <label className="pos-label">Telefone / WhatsApp</label>
                 <input
                   className="pos-input"
                   type="text"
-                  value={store.ie || ''}
-                  onChange={(e) => setStore({ ...store, ie: e.target.value })}
-                  placeholder="Ex: 123456789"
+                  value={store.phone || ''}
+                  onChange={(e) => setStore({ ...store, phone: e.target.value })}
+                  placeholder="(11) 98765-4321"
                 />
               </div>
             </div>
@@ -329,7 +341,7 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
                 type="text"
                 value={store.address}
                 onChange={(e) => setStore({ ...store, address: e.target.value })}
-                placeholder="RUA PRINCIPAL, 123 - CENTRO - CIDADE - UF"
+                placeholder="Rua das Flores, 120 - Centro - Cidade - UF"
               />
             </div>
 
@@ -346,82 +358,63 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
         )}
       </div>
 
-      {/* 2. DADOS DO DOCUMENTO E SÉRIE */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '10px' }}>
-          <div>
-            <label className="pos-label">Tipo de Documento</label>
-            <select
-              className="pos-input"
-              value={docTitle}
-              onChange={(e) => setDocTitle(e.target.value)}
-            >
-              <option value="DANFE NFC-e - Documento Auxiliar&#10;da Nota Fiscal Eletrônica para Consumidor">
-                DANFE NFC-e - Documento Auxiliar
-              </option>
-              <option value="DOCUMENTO AUXILIAR DE VENDA&#10;NÃO É DOCUMENTO FISCAL">
-                Documento Auxiliar de Venda
-              </option>
-              <option value="COMPROVANTE DE VENDA A CONSUMIDOR&#10;NÃO FISCAL">
-                Comprovante de Venda a Consumidor
-              </option>
-            </select>
-          </div>
-
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-              <label className="pos-label" style={{ margin: 0 }}>Data & Hora</label>
-              <button
-                type="button"
-                style={{ background: 'transparent', border: 'none', color: 'var(--accent-bt)', fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}
-                onClick={() => {
-                  const now = new Date();
-                  setDate(now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR'));
-                }}
-              >
-                <Clock size={11} /> Agora
-              </button>
-            </div>
-            <input
-              className="pos-input"
-              type="text"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </div>
+      {/* 2. DADOS DO COMPROVANTE (NÃO FISCAL) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 120px 1fr', gap: '10px' }}>
+        <div>
+          <label className="pos-label">Tipo de Comprovante</label>
+          <select
+            className="pos-input"
+            value={docTitle}
+            onChange={(e) => setDocTitle(e.target.value)}
+          >
+            <option value="COMPROVANTE NÃO FISCAL">COMPROVANTE NÃO FISCAL</option>
+            <option value="COMPROVANTE DE VENDA">COMPROVANTE DE VENDA</option>
+            <option value="RECIBO DE PAGAMENTO">RECIBO DE PAGAMENTO</option>
+            <option value="PEDIDO / CONTROLE INTERNO">PEDIDO / CONTROLE INTERNO</option>
+            <option value="ORDEM DE SERVIÇO">ORDEM DE SERVIÇO</option>
+          </select>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px', gap: '10px' }}>
-          <div>
-            <label className="pos-label">Nº Documento / Pedido</label>
-            <input
-              className="pos-input"
-              type="text"
-              value={orderNumber}
-              onChange={(e) => setOrderNumber(e.target.value)}
-              placeholder="1234"
-            />
-          </div>
+        <div>
+          <label className="pos-label">Nº Pedido / Controle</label>
+          <input
+            className="pos-input"
+            type="text"
+            value={orderNumber}
+            onChange={(e) => setOrderNumber(e.target.value)}
+            placeholder="1042"
+          />
+        </div>
 
-          <div>
-            <label className="pos-label">Série</label>
-            <input
-              className="pos-input"
-              type="text"
-              value={serie}
-              onChange={(e) => setSerie(e.target.value)}
-              placeholder="0"
-            />
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+            <label className="pos-label" style={{ margin: 0 }}>Data & Hora</label>
+            <button
+              type="button"
+              style={{ background: 'transparent', border: 'none', color: 'var(--accent-bt)', fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}
+              onClick={() => {
+                const now = new Date();
+                setDate(now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR'));
+              }}
+            >
+              <Clock size={11} /> Agora
+            </button>
           </div>
+          <input
+            className="pos-input"
+            type="text"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
         </div>
       </div>
 
-      {/* 3. LANÇAMENTO E LISTA DE ITENS (DETALHE DA VENDA) */}
+      {/* 3. LANÇAMENTO E LISTA DE ITENS */}
       <div className="receipt-section-box">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.875rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.85rem' }}>
             <FileText size={15} color="var(--accent-bt)" />
-            <span>Detalhe da Venda (Itens)</span>
+            <span>Itens do Pedido</span>
             <span style={{ fontSize: '0.75rem', color: 'var(--accent-bt)', background: 'rgba(14, 165, 233, 0.15)', padding: '1px 6px', borderRadius: '4px' }}>
               {items.length} item(ns)
             </span>
@@ -435,22 +428,22 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
               onClick={handleLoadExample}
             >
               <Sparkles size={12} color="var(--accent-bt)" />
-              <span>Modelo Exemplo</span>
+              <span>Exemplo Padrão</span>
             </button>
             <button
               type="button"
               className="btn-secondary"
               style={{ padding: '4px 8px', fontSize: '0.72rem', color: 'var(--accent-danger)' }}
               onClick={handleNewOrder}
-              title="Limpar itens para o próximo cliente"
+              title="Limpar itens para o próximo atendimento"
             >
               <RotateCcw size={12} />
-              <span>Limpar</span>
+              <span>Novo Pedido</span>
             </button>
           </div>
         </div>
 
-        {/* Linha de Cadastro de Item em 2 Linhas Espaçosas */}
+        {/* Cadastro de Item em 2 Linhas Espaçosas */}
         <form onSubmit={handleAddItem} style={{ background: 'rgba(15, 23, 42, 0.4)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: '10px', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '8px' }}>
             <div>
@@ -465,14 +458,14 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
             </div>
 
             <div>
-              <label className="pos-label">Descrição do Produto</label>
+              <label className="pos-label">Descrição do Item</label>
               <input
                 ref={nameInputRef}
                 className="pos-input"
                 type="text"
                 value={newItemName}
                 onChange={(e) => setNewItemName(e.target.value)}
-                placeholder="Ex: Café Expresso (Enter para adicionar)..."
+                placeholder="Ex: Café Expresso (Pressione Enter para adicionar)..."
               />
             </div>
           </div>
@@ -555,8 +548,8 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
                     </button>
                   </div>
 
-                  {/* Código + Nome */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  {/* Código + Descrição */}
+                  <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                       Cód: {it.code || (idx + 1).toString().padStart(3, '0')}
                     </div>
@@ -588,12 +581,12 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
                   </div>
 
                   {/* Unitário */}
-                  <div style={{ width: '75px', textAlign: 'right', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  <div style={{ textAlign: 'right', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                     R$ {formatCurrency(it.unitPrice)}
                   </div>
 
                   {/* Subtotal */}
-                  <div style={{ width: '85px', textAlign: 'right', fontWeight: 700, fontSize: '0.825rem', color: 'var(--text-primary)' }}>
+                  <div style={{ textAlign: 'right', fontWeight: 700, fontSize: '0.825rem', color: 'var(--text-primary)' }}>
                     R$ {formatCurrency(itemTotal)}
                   </div>
 
@@ -613,7 +606,7 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
         </div>
       </div>
 
-      {/* 4. TOTAIS, DESCONTOS, DESPESAS E PAGAMENTO */}
+      {/* 4. TOTAIS, DESCONTOS, TAXAS E PAGAMENTO */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
         {/* Formas de Pagamento */}
         <div className="receipt-section-box">
@@ -622,10 +615,10 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
           </label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
             {[
-              { label: 'Cartão de Crédito - Visa', icon: <CreditCard size={13} /> },
-              { label: 'Cartão de Débito', icon: <CreditCard size={13} /> },
               { label: 'PIX', icon: <QrCode size={13} /> },
               { label: 'Dinheiro', icon: <Banknote size={13} /> },
+              { label: 'Cartão Débito', icon: <CreditCard size={13} /> },
+              { label: 'Cartão Crédito', icon: <CreditCard size={13} /> },
             ].map((method) => (
               <button
                 key={method.label}
@@ -653,7 +646,7 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
               />
             </div>
             <div>
-              <label className="pos-label">Outras Despesas (R$)</label>
+              <label className="pos-label">Taxa Entrega / Outros (R$)</label>
               <input
                 className="pos-input"
                 type="number"
@@ -710,7 +703,7 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
             )}
             {otherExpenses > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
-                <span>Outras Despesas:</span>
+                <span>Taxa / Acréscimo:</span>
                 <span>+R$ {formatCurrency(otherExpenses)}</span>
               </div>
             )}
@@ -727,7 +720,7 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
         </div>
       </div>
 
-      {/* 5. CONSUMIDOR (OPCIONAL) */}
+      {/* 5. DADOS DO CLIENTE (OPCIONAL) */}
       <div className="receipt-section-box">
         <div
           className="receipt-section-header"
@@ -736,34 +729,34 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <User size={15} color="var(--accent-bt)" />
-            <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Identificação do Consumidor</span>
+            <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Identificação do Cliente (Opcional)</span>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              ({consumer.name || 'Não identificado'})
+              ({consumer.name || 'Não informado'})
             </span>
           </div>
           <div>{isConsumerExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</div>
         </div>
 
         {isConsumerExpanded && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px', marginTop: '10px' }}>
             <div>
-              <label className="pos-label">Nome do Consumidor</label>
+              <label className="pos-label">Nome do Cliente</label>
               <input
                 className="pos-input"
                 type="text"
                 value={consumer.name || ''}
                 onChange={(e) => setConsumer({ ...consumer, name: e.target.value })}
-                placeholder="DESTINATARIO TESTE"
+                placeholder="Ex: Carlos Eduardo"
               />
             </div>
             <div>
-              <label className="pos-label">CPF / CNPJ</label>
+              <label className="pos-label">CPF / Telefone</label>
               <input
                 className="pos-input"
                 type="text"
                 value={consumer.doc || ''}
                 onChange={(e) => setConsumer({ ...consumer, doc: e.target.value })}
-                placeholder="99.999.999/9999-99"
+                placeholder="Ex: 123.456.789-00 ou (11) 98765-4321"
               />
             </div>
           </div>
@@ -778,7 +771,7 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
           type="text"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="NFC-E EMITIDO PARA TESTE DE IMPRESSAO"
+          placeholder="Obrigado pela preferência! Volte sempre."
         />
       </div>
     </div>
