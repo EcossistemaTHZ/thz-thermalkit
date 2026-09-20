@@ -283,6 +283,10 @@ fn print_job(req: PrintJobRequest) -> Result<String, String> {
         return Err("Nenhum arquivo ou texto fornecido para impressão".into());
     }
 
+    // Avança o papel automaticamente ao final de cada impressão (mesmo comando do botão Feed)
+    // para que o comprovante ultrapasse a barra serrilhada de corte da maquininha
+    bytes.extend_from_slice(&[0x1b, b'd', 4, b'\n']);
+
     write_payload(&transport, &bytes).map_err(|e| format!("Erro de comunicação física: {e}"))?;
 
     Ok("Impressão enviada com sucesso!".into())
@@ -300,7 +304,8 @@ fn print_test_probe(target_transport: String, target_param: String) -> Result<St
         _ => return Err("Transporte inválido".into()),
     };
 
-    let bytes = probe_payload();
+    let mut bytes = probe_payload();
+    bytes.extend_from_slice(&[0x1b, b'd', 4, b'\n']);
     write_payload(&transport, &bytes).map_err(|e| format!("Erro no teste de probe: {e}"))?;
 
     Ok("Teste de diagnóstico ESC/POS enviado com sucesso!".into())
