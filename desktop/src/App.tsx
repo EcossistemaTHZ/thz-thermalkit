@@ -376,7 +376,7 @@ export const App: React.FC = () => {
 
           {/* Área Central: Visualizador da Bobina Térmica ou Editor */}
           {activeTab === 'receipt' ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 370px', gap: '16px', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 330px', gap: '16px', flex: 1, minHeight: 0, overflow: 'hidden' }}>
               {/* Painel Interativo de Notinha (Caixa / PDV) */}
               <ReceiptBuilder
                 widthDots={widthDots}
@@ -423,7 +423,7 @@ export const App: React.FC = () => {
               </div>
             )
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 370px', gap: '16px', flex: 1, minHeight: 0 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 330px', gap: '16px', flex: 1, minHeight: 0 }}>
               {/* Editor de Texto com Contador de Colunas */}
               <div className="direct-text-wrapper">
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>

@@ -347,68 +347,72 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
       </div>
 
       {/* 2. DADOS DO DOCUMENTO E SÉRIE */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 100px 70px 1.2fr', gap: '10px' }}>
-        <div>
-          <label className="pos-label">Tipo de Documento</label>
-          <select
-            className="pos-input"
-            value={docTitle}
-            onChange={(e) => setDocTitle(e.target.value)}
-          >
-            <option value="DANFE NFC-e - Documento Auxiliar&#10;da Nota Fiscal Eletrônica para Consumidor">
-              DANFE NFC-e - Documento Auxiliar
-            </option>
-            <option value="DOCUMENTO AUXILIAR DE VENDA&#10;NÃO É DOCUMENTO FISCAL">
-              Documento Auxiliar de Venda
-            </option>
-            <option value="COMPROVANTE DE VENDA A CONSUMIDOR&#10;NÃO FISCAL">
-              Comprovante de Venda a Consumidor
-            </option>
-          </select>
-        </div>
-
-        <div>
-          <label className="pos-label">Nº Doc</label>
-          <input
-            className="pos-input"
-            type="text"
-            value={orderNumber}
-            onChange={(e) => setOrderNumber(e.target.value)}
-            placeholder="1234"
-          />
-        </div>
-
-        <div>
-          <label className="pos-label">Série</label>
-          <input
-            className="pos-input"
-            type="text"
-            value={serie}
-            onChange={(e) => setSerie(e.target.value)}
-            placeholder="0"
-          />
-        </div>
-
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-            <label className="pos-label" style={{ margin: 0 }}>Data & Hora</label>
-            <button
-              type="button"
-              style={{ background: 'transparent', border: 'none', color: 'var(--accent-bt)', fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}
-              onClick={() => {
-                const now = new Date();
-                setDate(now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR'));
-              }}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '10px' }}>
+          <div>
+            <label className="pos-label">Tipo de Documento</label>
+            <select
+              className="pos-input"
+              value={docTitle}
+              onChange={(e) => setDocTitle(e.target.value)}
             >
-              <Clock size={11} /> Agora
-            </button>
+              <option value="DANFE NFC-e - Documento Auxiliar&#10;da Nota Fiscal Eletrônica para Consumidor">
+                DANFE NFC-e - Documento Auxiliar
+              </option>
+              <option value="DOCUMENTO AUXILIAR DE VENDA&#10;NÃO É DOCUMENTO FISCAL">
+                Documento Auxiliar de Venda
+              </option>
+              <option value="COMPROVANTE DE VENDA A CONSUMIDOR&#10;NÃO FISCAL">
+                Comprovante de Venda a Consumidor
+              </option>
+            </select>
           </div>
-          <input
-            className="pos-input"
-            type="text"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
+
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <label className="pos-label" style={{ margin: 0 }}>Data & Hora</label>
+              <button
+                type="button"
+                style={{ background: 'transparent', border: 'none', color: 'var(--accent-bt)', fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}
+                onClick={() => {
+                  const now = new Date();
+                  setDate(now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR'));
+                }}
+              >
+                <Clock size={11} /> Agora
+              </button>
+            </div>
+            <input
+              className="pos-input"
+              type="text"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px', gap: '10px' }}>
+          <div>
+            <label className="pos-label">Nº Documento / Pedido</label>
+            <input
+              className="pos-input"
+              type="text"
+              value={orderNumber}
+              onChange={(e) => setOrderNumber(e.target.value)}
+              placeholder="1234"
+            />
+          </div>
+
+          <div>
+            <label className="pos-label">Série</label>
+            <input
+              className="pos-input"
+              type="text"
+              value={serie}
+              onChange={(e) => setSerie(e.target.value)}
+              placeholder="0"
+            />
+          </div>
         </div>
       </div>
 
@@ -431,7 +435,7 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
               onClick={handleLoadExample}
             >
               <Sparkles size={12} color="var(--accent-bt)" />
-              <span>Modelo NFC-e Exemplo</span>
+              <span>Modelo Exemplo</span>
             </button>
             <button
               type="button"
@@ -446,71 +450,76 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
           </div>
         </div>
 
-        {/* Linha de Cadastro Rápido de Item */}
-        <form onSubmit={handleAddItem} className="pos-add-item-form">
-          <div style={{ width: '100px' }}>
-            <input
-              className="pos-input"
-              type="text"
-              value={newItemCode}
-              onChange={(e) => setNewItemCode(e.target.value)}
-              placeholder="Código"
-              title="Código do produto"
-            />
+        {/* Linha de Cadastro de Item em 2 Linhas Espaçosas */}
+        <form onSubmit={handleAddItem} style={{ background: 'rgba(15, 23, 42, 0.4)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: '10px', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '8px' }}>
+            <div>
+              <label className="pos-label">Código</label>
+              <input
+                className="pos-input"
+                type="text"
+                value={newItemCode}
+                onChange={(e) => setNewItemCode(e.target.value)}
+                placeholder="Ex: 001"
+              />
+            </div>
+
+            <div>
+              <label className="pos-label">Descrição do Produto</label>
+              <input
+                ref={nameInputRef}
+                className="pos-input"
+                type="text"
+                value={newItemName}
+                onChange={(e) => setNewItemName(e.target.value)}
+                placeholder="Ex: Café Expresso (Enter para adicionar)..."
+              />
+            </div>
           </div>
 
-          <div style={{ flex: 3 }}>
-            <input
-              ref={nameInputRef}
-              className="pos-input"
-              type="text"
-              value={newItemName}
-              onChange={(e) => setNewItemName(e.target.value)}
-              placeholder="Descrição do produto..."
-            />
-          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '75px 65px 110px 1fr', gap: '8px', alignItems: 'flex-end' }}>
+            <div>
+              <label className="pos-label">Qtd</label>
+              <input
+                className="pos-input"
+                type="text"
+                value={newItemQty}
+                onChange={(e) => setNewItemQty(e.target.value)}
+              />
+            </div>
 
-          <div style={{ width: '60px' }}>
-            <input
-              className="pos-input"
-              type="text"
-              value={newItemUnit}
-              onChange={(e) => setNewItemUnit(e.target.value)}
-              placeholder="UN"
-              title="Unidade (UN, PC, KG)"
-            />
-          </div>
+            <div>
+              <label className="pos-label">UN</label>
+              <input
+                className="pos-input"
+                type="text"
+                value={newItemUnit}
+                onChange={(e) => setNewItemUnit(e.target.value)}
+                placeholder="UN"
+              />
+            </div>
 
-          <div style={{ width: '70px' }}>
-            <input
-              className="pos-input"
-              type="text"
-              value={newItemQty}
-              onChange={(e) => setNewItemQty(e.target.value)}
-              placeholder="Qtd"
-              title="Quantidade"
-            />
-          </div>
+            <div>
+              <label className="pos-label">Unit R$</label>
+              <input
+                className="pos-input"
+                type="text"
+                value={newItemPrice}
+                onChange={(e) => setNewItemPrice(e.target.value)}
+                placeholder="0,00"
+              />
+            </div>
 
-          <div style={{ width: '90px' }}>
-            <input
-              className="pos-input"
-              type="text"
-              value={newItemPrice}
-              onChange={(e) => setNewItemPrice(e.target.value)}
-              placeholder="Unit R$"
-            />
+            <button
+              type="submit"
+              className="btn-primary bt"
+              style={{ padding: '7px 12px', fontSize: '0.8rem', borderRadius: 'var(--radius-sm)', height: '35px' }}
+              disabled={!newItemName.trim()}
+            >
+              <Plus size={15} />
+              <span>Adicionar Item</span>
+            </button>
           </div>
-
-          <button
-            type="submit"
-            className="btn-primary bt"
-            style={{ padding: '8px 12px', fontSize: '0.8rem', borderRadius: 'var(--radius-sm)' }}
-            disabled={!newItemName.trim()}
-          >
-            <Plus size={16} />
-            <span>Adicionar</span>
-          </button>
         </form>
 
         {/* Tabela de Itens Adicionados */}

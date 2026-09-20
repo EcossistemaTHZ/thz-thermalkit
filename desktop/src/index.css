@@ -86,11 +86,11 @@ body {
 
 .app-content {
   display: grid;
-  grid-template-columns: 340px 1fr;
+  grid-template-columns: 270px 1fr;
   flex: 1;
   overflow: hidden;
-  gap: 20px;
-  padding: 0 24px 24px 24px;
+  gap: 16px;
+  padding: 0 18px 18px 18px;
 }
 
 /* Header */
@@ -743,10 +743,11 @@ body {
 }
 
 .pos-item-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 20px 1fr auto 70px 80px 24px;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 6px 10px;
   background: rgba(255, 255, 255, 0.03);
   border-radius: 6px;
   border: 1px solid transparent;

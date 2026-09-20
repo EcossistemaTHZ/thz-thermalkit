@@ -32,7 +32,7 @@ export const ThermalViewer: React.FC<ThermalViewerProps> = ({
       <div
         className="thermal-paper"
         style={{
-          width: widthDots === 576 ? '460px' : '360px',
+          width: widthDots === 576 ? '420px' : '315px',
         }}
       >
         {/* Serrilha superior de corte manual */}
