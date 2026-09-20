@@ -3,6 +3,7 @@ import {
   ReceiptData,
   ReceiptItem,
   StoreInfo,
+  ConsumerInfo,
   buildReceiptText,
   formatCurrency,
 } from '../utils/receiptFormatter';
@@ -21,6 +22,9 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
+  FileText,
+  User,
+  Clock,
 } from 'lucide-react';
 
 interface ReceiptBuilderProps {
@@ -28,7 +32,7 @@ interface ReceiptBuilderProps {
   onReceiptChange: (compiledText: string) => void;
 }
 
-const STORAGE_KEY_STORE = 'thz_thermalkit_store_info';
+const STORAGE_KEY_STORE = 'thz_thermalkit_danfe_store';
 
 export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
   widthDots,
@@ -42,54 +46,82 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
       const saved = localStorage.getItem(STORAGE_KEY_STORE);
       if (saved) return JSON.parse(saved);
     } catch {
-      // Ignora erro de storage
+      // Ignora erro
     }
     return {
-      name: 'PADARIA & CONFEITARIA CENTRAL',
-      doc: 'CNPJ: 12.345.678/0001-90',
-      phone: 'Tel/Whats: (11) 98765-4321',
-      address: 'Rua das Flores, 120 - Centro',
+      name: 'RAZAO SOCIAL',
+      doc: '99.999.999/9999-99',
+      ie: '12345678',
+      address: 'RUA PRINCIPAL, 123 - CENTRO - CAPITAL - RS',
     };
   });
 
   const [isStoreSaved, setIsStoreSaved] = useState(false);
   const [isStoreExpanded, setIsStoreExpanded] = useState(false);
 
-  // 2. Dados do Pedido / Caixa
-  const [orderNumber, setOrderNumber] = useState('1042');
+  // 2. Título do Documento
+  const [docTitle, setDocTitle] = useState(
+    'DANFE NFC-e - Documento Auxiliar\nda Nota Fiscal Eletrônica para Consumidor'
+  );
+
+  // 3. Dados da Emissão e Consumidor
+  const [orderNumber, setOrderNumber] = useState('1234');
+  const [serie, setSerie] = useState('0');
   const [date, setDate] = useState(() => {
     const now = new Date();
-    return now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR').slice(0, 5);
+    return now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR');
   });
-  const [customerName, setCustomerName] = useState('');
 
-  // 3. Lista de Itens do Pedido
+  const [consumer, setConsumer] = useState<ConsumerInfo>({
+    name: 'DESTINATARIO TESTE',
+    doc: '99.999.999/9999-99',
+    address: 'RUA PRINCIPAL, 123, CENTRO, CAPITAL - RS',
+  });
+  const [isConsumerExpanded, setIsConsumerExpanded] = useState(false);
+
+  // 4. Lista de Itens do Pedido (padrão igual ao modelo fornecido)
   const [items, setItems] = useState<ReceiptItem[]>([
-    { id: '1', name: 'Cafe Expresso', qty: 2, unitPrice: 6.0 },
-    { id: '2', name: 'Pao na Chapa', qty: 1, unitPrice: 7.5 },
-    { id: '3', name: 'Agua Mineral', qty: 1, unitPrice: 4.0 },
+    {
+      id: '1',
+      code: '1111111111111',
+      name: 'TESTE IMPRESSAO',
+      unit: 'PC',
+      qty: 1,
+      unitPrice: 12.0,
+    },
+    {
+      id: '2',
+      code: '2222222222222',
+      name: 'ITEM COM DESCRICAO MUITO LONGA',
+      unit: 'PC',
+      qty: 100,
+      unitPrice: 0.01,
+    },
   ]);
 
   // Campos para novo item
+  const [newItemCode, setNewItemCode] = useState('');
   const [newItemName, setNewItemName] = useState('');
-  const [newItemQty, setNewItemQty] = useState(1);
+  const [newItemUnit, setNewItemUnit] = useState('UN');
+  const [newItemQty, setNewItemQty] = useState('1');
   const [newItemPrice, setNewItemPrice] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
 
-  // 4. Totais e Pagamento
-  const [paymentMethod, setPaymentMethod] = useState('PIX');
-  const [discount, setDiscount] = useState<number>(0);
-  const [cashReceived, setCashReceived] = useState<string>('');
-  const [notes, setNotes] = useState('Obrigado pela preferencia! Volte sempre.');
+  // 5. Totais e Pagamento
+  const [paymentMethod, setPaymentMethod] = useState('Cartão de Crédito - Visa');
+  const [discount, setDiscount] = useState<number>(0.06);
+  const [otherExpenses, setOtherExpenses] = useState<number>(8.0);
+  const [cashReceived, setCashReceived] = useState<string>('21,00');
+  const [notes, setNotes] = useState('NFC-E EMITIDO PARA TESTE DE IMPRESSAO');
 
-  // Salvar dados da loja no localStorage
+  // Salvar dados da empresa no localStorage
   const handleSaveStore = () => {
     try {
       localStorage.setItem(STORAGE_KEY_STORE, JSON.stringify(store));
       setIsStoreSaved(true);
       setTimeout(() => setIsStoreSaved(false), 2500);
     } catch {
-      // Erro silencioso
+      // Ignora erro
     }
   };
 
@@ -97,12 +129,15 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
   useEffect(() => {
     const receiptData: ReceiptData = {
       store,
+      title: docTitle,
       orderNumber,
+      serie,
       date,
-      customerName,
+      consumer: consumer.name || consumer.doc ? consumer : undefined,
       items,
       paymentMethod,
       discount,
+      otherExpenses,
       cashReceived: cashReceived ? parseFloat(cashReceived.replace(',', '.')) : undefined,
       notes,
     };
@@ -111,12 +146,15 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
     onReceiptChange(compiled);
   }, [
     store,
+    docTitle,
     orderNumber,
+    serie,
     date,
-    customerName,
+    consumer,
     items,
     paymentMethod,
     discount,
+    otherExpenses,
     cashReceived,
     notes,
     maxCols,
@@ -129,16 +167,24 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
     if (!newItemName.trim()) return;
 
     const priceNum = parseFloat(newItemPrice.replace(',', '.')) || 0;
+    const qtyNum = parseFloat(newItemQty.replace(',', '.')) || 1;
+    const nextCode =
+      newItemCode.trim() ||
+      (items.length + 1).toString().padStart(6, '0');
+
     const newItem: ReceiptItem = {
       id: Date.now().toString(),
+      code: nextCode,
       name: newItemName.trim(),
-      qty: Math.max(1, newItemQty),
+      unit: newItemUnit.trim() || 'UN',
+      qty: Math.max(0.01, qtyNum),
       unitPrice: priceNum,
     };
 
     setItems((prev) => [...prev, newItem]);
+    setNewItemCode('');
     setNewItemName('');
-    setNewItemQty(1);
+    setNewItemQty('1');
     setNewItemPrice('');
     nameInputRef.current?.focus();
   };
@@ -166,39 +212,56 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
     setItems(newItems);
   };
 
-  // Iniciar Novo Pedido (limpa itens para o próximo cliente e incrementa o pedido)
+  // Iniciar Novo Pedido (limpa itens e incrementa nº do documento)
   const handleNewOrder = () => {
     setItems([]);
-    setCustomerName('');
     setCashReceived('');
     setDiscount(0);
+    setOtherExpenses(0);
     const num = parseInt(orderNumber, 10);
     if (!isNaN(num)) {
       setOrderNumber(String(num + 1));
     }
     const now = new Date();
-    setDate(now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR').slice(0, 5));
+    setDate(now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR'));
     nameInputRef.current?.focus();
   };
 
-  // Carregar Exemplo Rápido
+  // Restaurar Exemplo DANFE NFC-e
   const handleLoadExample = () => {
     setItems([
-      { id: '1', name: 'Cafe Expresso', qty: 2, unitPrice: 6.0 },
-      { id: '2', name: 'Pao na Chapa', qty: 1, unitPrice: 7.5 },
-      { id: '3', name: 'Agua Mineral', qty: 1, unitPrice: 4.0 },
+      {
+        id: '1',
+        code: '1111111111111',
+        name: 'TESTE IMPRESSAO',
+        unit: 'PC',
+        qty: 1,
+        unitPrice: 12.0,
+      },
+      {
+        id: '2',
+        code: '2222222222222',
+        name: 'ITEM COM DESCRICAO MUITO LONGA',
+        unit: 'PC',
+        qty: 100,
+        unitPrice: 0.01,
+      },
     ]);
+    setDiscount(0.06);
+    setOtherExpenses(8.0);
+    setPaymentMethod('Cartão de Crédito - Visa');
+    setCashReceived('21,00');
   };
 
   // Cálculos de Totais
   const subtotal = items.reduce((acc, it) => acc + it.qty * it.unitPrice, 0);
-  const total = Math.max(0, subtotal - discount);
+  const total = Math.max(0, subtotal - discount + (otherExpenses || 0));
   const cashNum = cashReceived ? parseFloat(cashReceived.replace(',', '.')) : 0;
   const change = paymentMethod.includes('Dinheiro') && cashNum > total ? cashNum - total : 0;
 
   return (
     <div className="receipt-builder-container">
-      {/* 1. SEÇÃO DO ESTABELECIMENTO */}
+      {/* 1. SEÇÃO DO EMISSOR / EMPRESA */}
       <div className="receipt-section-box">
         <div
           className="receipt-section-header"
@@ -207,9 +270,9 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Store size={16} color="var(--accent-bt)" />
-            <span style={{ fontWeight: 700, fontSize: '0.875rem' }}>Dados do Estabelecimento</span>
+            <span style={{ fontWeight: 700, fontSize: '0.875rem' }}>Empresa / Razão Social</span>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              ({store.name || 'Sem nome'})
+              ({store.name || 'RAZAO SOCIAL'})
             </span>
           </div>
 
@@ -226,47 +289,47 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
         {isStoreExpanded && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
             <div>
-              <label className="pos-label">Nome da Loja / Fantasia</label>
+              <label className="pos-label">Razão Social</label>
               <input
                 className="pos-input"
                 type="text"
                 value={store.name}
                 onChange={(e) => setStore({ ...store, name: e.target.value })}
-                placeholder="Ex: PADARIA & LANCHONETE CENTRAL"
+                placeholder="Ex: RAZAO SOCIAL DA EMPRESA"
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
               <div>
-                <label className="pos-label">CNPJ ou CPF (Opcional)</label>
+                <label className="pos-label">CNPJ</label>
                 <input
                   className="pos-input"
                   type="text"
                   value={store.doc}
                   onChange={(e) => setStore({ ...store, doc: e.target.value })}
-                  placeholder="Ex: CNPJ: 12.345.678/0001-90"
+                  placeholder="99.999.999/9999-99"
                 />
               </div>
               <div>
-                <label className="pos-label">Telefone / WhatsApp</label>
+                <label className="pos-label">Inscrição Estadual (IE)</label>
                 <input
                   className="pos-input"
                   type="text"
-                  value={store.phone}
-                  onChange={(e) => setStore({ ...store, phone: e.target.value })}
-                  placeholder="Ex: Tel: (11) 98765-4321"
+                  value={store.ie || ''}
+                  onChange={(e) => setStore({ ...store, ie: e.target.value })}
+                  placeholder="Ex: 123456789"
                 />
               </div>
             </div>
 
             <div>
-              <label className="pos-label">Endereço (Opcional)</label>
+              <label className="pos-label">Endereço Completo</label>
               <input
                 className="pos-input"
                 type="text"
                 value={store.address}
                 onChange={(e) => setStore({ ...store, address: e.target.value })}
-                placeholder="Ex: Rua das Flores, 120 - Centro"
+                placeholder="RUA PRINCIPAL, 123 - CENTRO - CIDADE - UF"
               />
             </div>
 
@@ -283,21 +346,63 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
         )}
       </div>
 
-      {/* 2. DADOS DO ATENDIMENTO / COMANDA */}
-      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 1fr', gap: '10px' }}>
+      {/* 2. DADOS DO DOCUMENTO E SÉRIE */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 100px 70px 1.2fr', gap: '10px' }}>
         <div>
-          <label className="pos-label">Comanda/Pedido</label>
+          <label className="pos-label">Tipo de Documento</label>
+          <select
+            className="pos-input"
+            value={docTitle}
+            onChange={(e) => setDocTitle(e.target.value)}
+          >
+            <option value="DANFE NFC-e - Documento Auxiliar&#10;da Nota Fiscal Eletrônica para Consumidor">
+              DANFE NFC-e - Documento Auxiliar
+            </option>
+            <option value="DOCUMENTO AUXILIAR DE VENDA&#10;NÃO É DOCUMENTO FISCAL">
+              Documento Auxiliar de Venda
+            </option>
+            <option value="COMPROVANTE DE VENDA A CONSUMIDOR&#10;NÃO FISCAL">
+              Comprovante de Venda a Consumidor
+            </option>
+          </select>
+        </div>
+
+        <div>
+          <label className="pos-label">Nº Doc</label>
           <input
             className="pos-input"
             type="text"
             value={orderNumber}
             onChange={(e) => setOrderNumber(e.target.value)}
-            placeholder="101"
+            placeholder="1234"
           />
         </div>
 
         <div>
-          <label className="pos-label">Data & Hora</label>
+          <label className="pos-label">Série</label>
+          <input
+            className="pos-input"
+            type="text"
+            value={serie}
+            onChange={(e) => setSerie(e.target.value)}
+            placeholder="0"
+          />
+        </div>
+
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+            <label className="pos-label" style={{ margin: 0 }}>Data & Hora</label>
+            <button
+              type="button"
+              style={{ background: 'transparent', border: 'none', color: 'var(--accent-bt)', fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}
+              onClick={() => {
+                const now = new Date();
+                setDate(now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR'));
+              }}
+            >
+              <Clock size={11} /> Agora
+            </button>
+          </div>
           <input
             className="pos-input"
             type="text"
@@ -305,56 +410,55 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
             onChange={(e) => setDate(e.target.value)}
           />
         </div>
-
-        <div>
-          <label className="pos-label">Nome do Cliente (Opcional)</label>
-          <input
-            className="pos-input"
-            type="text"
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-            placeholder="Ex: João da Silva"
-          />
-        </div>
       </div>
 
-      {/* 3. LANÇAMENTO E LISTA DE ITENS */}
+      {/* 3. LANÇAMENTO E LISTA DE ITENS (DETALHE DA VENDA) */}
       <div className="receipt-section-box">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.875rem' }}>
-            <span>Itens da Venda</span>
+            <FileText size={15} color="var(--accent-bt)" />
+            <span>Detalhe da Venda (Itens)</span>
             <span style={{ fontSize: '0.75rem', color: 'var(--accent-bt)', background: 'rgba(14, 165, 233, 0.15)', padding: '1px 6px', borderRadius: '4px' }}>
               {items.length} item(ns)
             </span>
           </div>
 
           <div style={{ display: 'flex', gap: '8px' }}>
-            {items.length === 0 && (
-              <button
-                type="button"
-                className="btn-secondary"
-                style={{ padding: '4px 8px', fontSize: '0.72rem' }}
-                onClick={handleLoadExample}
-              >
-                <Sparkles size={12} color="var(--accent-bt)" />
-                <span>Carregar Exemplo</span>
-              </button>
-            )}
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+              onClick={handleLoadExample}
+            >
+              <Sparkles size={12} color="var(--accent-bt)" />
+              <span>Modelo NFC-e Exemplo</span>
+            </button>
             <button
               type="button"
               className="btn-secondary"
               style={{ padding: '4px 8px', fontSize: '0.72rem', color: 'var(--accent-danger)' }}
               onClick={handleNewOrder}
-              title="Limpar todos os itens para o próximo atendimento"
+              title="Limpar itens para o próximo cliente"
             >
               <RotateCcw size={12} />
-              <span>Novo Pedido</span>
+              <span>Limpar</span>
             </button>
           </div>
         </div>
 
         {/* Linha de Cadastro Rápido de Item */}
         <form onSubmit={handleAddItem} className="pos-add-item-form">
+          <div style={{ width: '100px' }}>
+            <input
+              className="pos-input"
+              type="text"
+              value={newItemCode}
+              onChange={(e) => setNewItemCode(e.target.value)}
+              placeholder="Código"
+              title="Código do produto"
+            />
+          </div>
+
           <div style={{ flex: 3 }}>
             <input
               ref={nameInputRef}
@@ -362,36 +466,46 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
               type="text"
               value={newItemName}
               onChange={(e) => setNewItemName(e.target.value)}
-              placeholder="Nome do produto ou serviço (Enter para adicionar)..."
-              autoFocus
+              placeholder="Descrição do produto..."
             />
           </div>
 
-          <div style={{ width: '80px' }}>
+          <div style={{ width: '60px' }}>
             <input
               className="pos-input"
-              type="number"
-              min="1"
+              type="text"
+              value={newItemUnit}
+              onChange={(e) => setNewItemUnit(e.target.value)}
+              placeholder="UN"
+              title="Unidade (UN, PC, KG)"
+            />
+          </div>
+
+          <div style={{ width: '70px' }}>
+            <input
+              className="pos-input"
+              type="text"
               value={newItemQty}
-              onChange={(e) => setNewItemQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+              onChange={(e) => setNewItemQty(e.target.value)}
+              placeholder="Qtd"
               title="Quantidade"
             />
           </div>
 
-          <div style={{ width: '110px' }}>
+          <div style={{ width: '90px' }}>
             <input
               className="pos-input"
               type="text"
               value={newItemPrice}
               onChange={(e) => setNewItemPrice(e.target.value)}
-              placeholder="R$ 0,00"
+              placeholder="Unit R$"
             />
           </div>
 
           <button
             type="submit"
             className="btn-primary bt"
-            style={{ padding: '8px 14px', fontSize: '0.8rem', borderRadius: 'var(--radius-sm)' }}
+            style={{ padding: '8px 12px', fontSize: '0.8rem', borderRadius: 'var(--radius-sm)' }}
             disabled={!newItemName.trim()}
           >
             <Plus size={16} />
@@ -402,8 +516,8 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
         {/* Tabela de Itens Adicionados */}
         <div className="pos-items-table">
           {items.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-              Nenhum item adicionado. Digite o nome do produto acima e pressione Enter.
+            <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+              Nenhum item adicionado. Digite os dados acima e pressione Enter.
             </div>
           ) : (
             items.map((it, idx) => {
@@ -419,7 +533,7 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
                       onClick={() => handleMoveItem(idx, 'up')}
                       title="Mover para cima"
                     >
-                      <ArrowUp size={12} />
+                      <ArrowUp size={11} />
                     </button>
                     <button
                       type="button"
@@ -428,17 +542,22 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
                       onClick={() => handleMoveItem(idx, 'down')}
                       title="Mover para baixo"
                     >
-                      <ArrowDown size={12} />
+                      <ArrowDown size={11} />
                     </button>
                   </div>
 
-                  {/* Nome do Item */}
-                  <div style={{ flex: 1, fontWeight: 600, fontSize: '0.85rem' }}>
-                    {it.name}
+                  {/* Código + Nome */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                      Cód: {it.code || (idx + 1).toString().padStart(3, '0')}
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: '0.825rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {it.name}
+                    </div>
                   </div>
 
                   {/* Controle de Quantidade */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                     <button
                       type="button"
                       className="pos-icon-btn"
@@ -447,8 +566,8 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
                     >
                       -
                     </button>
-                    <span style={{ minWidth: '24px', textAlign: 'center', fontWeight: 700, fontSize: '0.85rem' }}>
-                      {it.qty}
+                    <span style={{ minWidth: '32px', textAlign: 'center', fontWeight: 700, fontSize: '0.8rem' }}>
+                      {it.qty} {it.unit || 'UN'}
                     </span>
                     <button
                       type="button"
@@ -459,13 +578,13 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
                     </button>
                   </div>
 
-                  {/* Preço Unitário */}
-                  <div style={{ width: '90px', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  {/* Unitário */}
+                  <div style={{ width: '75px', textAlign: 'right', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                     R$ {formatCurrency(it.unitPrice)}
                   </div>
 
-                  {/* Subtotal do Item */}
-                  <div style={{ width: '95px', textAlign: 'right', fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                  {/* Subtotal */}
+                  <div style={{ width: '85px', textAlign: 'right', fontWeight: 700, fontSize: '0.825rem', color: 'var(--text-primary)' }}>
                     R$ {formatCurrency(itemTotal)}
                   </div>
 
@@ -476,7 +595,7 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
                     onClick={() => handleRemoveItem(it.id)}
                     title="Excluir item"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={13} />
                   </button>
                 </div>
               );
@@ -485,8 +604,8 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
         </div>
       </div>
 
-      {/* 4. PAGAMENTO E TOTAIS */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '14px' }}>
+      {/* 4. TOTAIS, DESCONTOS, DESPESAS E PAGAMENTO */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
         {/* Formas de Pagamento */}
         <div className="receipt-section-box">
           <label className="pos-label" style={{ marginBottom: '8px', display: 'block' }}>
@@ -494,11 +613,10 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
           </label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
             {[
-              { label: 'PIX', icon: <QrCode size={14} /> },
-              { label: 'Dinheiro', icon: <Banknote size={14} /> },
-              { label: 'Cartão Débito', icon: <CreditCard size={14} /> },
-              { label: 'Cartão Crédito', icon: <CreditCard size={14} /> },
-              { label: 'Outro', icon: null },
+              { label: 'Cartão de Crédito - Visa', icon: <CreditCard size={13} /> },
+              { label: 'Cartão de Débito', icon: <CreditCard size={13} /> },
+              { label: 'PIX', icon: <QrCode size={13} /> },
+              { label: 'Dinheiro', icon: <Banknote size={13} /> },
             ].map((method) => (
               <button
                 key={method.label}
@@ -512,12 +630,39 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
             ))}
           </div>
 
-          {/* Seletor de Troco para Dinheiro */}
+          <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <div>
+              <label className="pos-label">Desconto (R$)</label>
+              <input
+                className="pos-input"
+                type="number"
+                min="0"
+                step="0.01"
+                value={discount || ''}
+                onChange={(e) => setDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
+                placeholder="0,00"
+              />
+            </div>
+            <div>
+              <label className="pos-label">Outras Despesas (R$)</label>
+              <input
+                className="pos-input"
+                type="number"
+                min="0"
+                step="0.01"
+                value={otherExpenses || ''}
+                onChange={(e) => setOtherExpenses(Math.max(0, parseFloat(e.target.value) || 0))}
+                placeholder="0,00"
+              />
+            </div>
+          </div>
+
+          {/* Troco para Dinheiro */}
           {paymentMethod.includes('Dinheiro') && (
-            <div style={{ marginTop: '12px', padding: '10px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: 'var(--radius-sm)' }}>
+            <div style={{ marginTop: '10px', padding: '8px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: 'var(--radius-sm)' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', alignItems: 'center' }}>
                 <div>
-                  <label className="pos-label">Valor Recebido (R$)</label>
+                  <label className="pos-label">Valor Recebido</label>
                   <input
                     className="pos-input"
                     type="text"
@@ -527,8 +672,8 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="pos-label">Troco a Devolver</label>
-                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent-usb)' }}>
+                  <label className="pos-label">Troco</label>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--accent-usb)' }}>
                     R$ {formatCurrency(change)}
                   </div>
                 </div>
@@ -537,50 +682,94 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
           )}
         </div>
 
-        {/* Resumo do Total a Pagar */}
+        {/* Card Resumo do Total */}
         <div className="receipt-section-box" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-              <span>Subtotal:</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
+              <span>Qtd. Itens:</span>
+              <strong>{items.length}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
+              <span>Valor dos Produtos:</span>
               <span>R$ {formatCurrency(subtotal)}</span>
             </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Desconto (R$):</span>
-              <input
-                className="pos-input"
-                style={{ width: '80px', padding: '4px 8px', textAlign: 'right', fontSize: '0.8rem' }}
-                type="number"
-                min="0"
-                step="0.5"
-                value={discount || ''}
-                onChange={(e) => setDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
-                placeholder="0,00"
-              />
-            </div>
+            {discount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--accent-danger)' }}>
+                <span>Desconto:</span>
+                <span>-R$ {formatCurrency(discount)}</span>
+              </div>
+            )}
+            {otherExpenses > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
+                <span>Outras Despesas:</span>
+                <span>+R$ {formatCurrency(otherExpenses)}</span>
+              </div>
+            )}
           </div>
 
-          {/* Destaque do Total */}
-          <div className="pos-total-card">
-            <span style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'rgba(255,255,255,0.7)' }}>
-              Total a Pagar
+          <div className="pos-total-card" style={{ marginTop: '10px' }}>
+            <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'rgba(255,255,255,0.75)' }}>
+              Valor Total R$
             </span>
-            <span style={{ fontSize: '1.6rem', fontWeight: 800, color: '#ffffff' }}>
+            <span style={{ fontSize: '1.5rem', fontWeight: 800, color: '#ffffff' }}>
               R$ {formatCurrency(total)}
             </span>
           </div>
         </div>
       </div>
 
-      {/* 5. MENSAGEM FINAL / RODAPÉ */}
+      {/* 5. CONSUMIDOR (OPCIONAL) */}
+      <div className="receipt-section-box">
+        <div
+          className="receipt-section-header"
+          onClick={() => setIsConsumerExpanded((prev) => !prev)}
+          style={{ cursor: 'pointer' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <User size={15} color="var(--accent-bt)" />
+            <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Identificação do Consumidor</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              ({consumer.name || 'Não identificado'})
+            </span>
+          </div>
+          <div>{isConsumerExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</div>
+        </div>
+
+        {isConsumerExpanded && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+            <div>
+              <label className="pos-label">Nome do Consumidor</label>
+              <input
+                className="pos-input"
+                type="text"
+                value={consumer.name || ''}
+                onChange={(e) => setConsumer({ ...consumer, name: e.target.value })}
+                placeholder="DESTINATARIO TESTE"
+              />
+            </div>
+            <div>
+              <label className="pos-label">CPF / CNPJ</label>
+              <input
+                className="pos-input"
+                type="text"
+                value={consumer.doc || ''}
+                onChange={(e) => setConsumer({ ...consumer, doc: e.target.value })}
+                placeholder="99.999.999/9999-99"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 6. MENSAGEM DO RODAPÉ */}
       <div>
-        <label className="pos-label">Mensagem do Rodapé (Agradecimento)</label>
+        <label className="pos-label">Mensagem do Rodapé</label>
         <input
           className="pos-input"
           type="text"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="Ex: Obrigado pela preferencia! Volte sempre."
+          placeholder="NFC-E EMITIDO PARA TESTE DE IMPRESSAO"
         />
       </div>
     </div>
