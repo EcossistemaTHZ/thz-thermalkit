@@ -36,6 +36,10 @@ export const App: React.FC = () => {
   // Estado da Notinha Interativa (PDV / Caixa)
   const [compiledReceiptText, setCompiledReceiptText] = useState<string>('');
 
+  // Estados de Exibição Responsiva (Painel Lateral e Prévia Térmica)
+  const [showSidebar, setShowSidebar] = useState(() => window.innerWidth >= 1350);
+  const [showPreview, setShowPreview] = useState(true);
+
   // Estado do Documento
   const [preview, setPreview] = useState<DocumentPreviewDto | null>(null);
   const [isLoadingDoc, setIsLoadingDoc] = useState(false);
@@ -253,19 +257,25 @@ export const App: React.FC = () => {
         printersCount={printers.length}
         onRefresh={refreshPrinters}
         isRefreshing={isRefreshing}
+        showSidebar={showSidebar}
+        onToggleSidebar={() => setShowSidebar((prev) => !prev)}
+        showPreview={showPreview}
+        onTogglePreview={() => setShowPreview((prev) => !prev)}
       />
 
       {/* Conteúdo Principal Dividido (Sidebar + Área de Bobina Térmica) */}
-      <div className="app-content">
-        <Sidebar
-          printers={printers}
-          selectedPrinter={selectedPrinter}
-          onSelectPrinter={setSelectedPrinter}
-          widthDots={widthDots}
-          codePage={codePage}
-          onUpdateWidth={handleUpdateWidth}
-          onUpdateCodePage={setCodePage}
-        />
+      <div className={`app-content ${!showSidebar ? 'no-sidebar' : ''}`}>
+        {showSidebar && (
+          <Sidebar
+            printers={printers}
+            selectedPrinter={selectedPrinter}
+            onSelectPrinter={setSelectedPrinter}
+            widthDots={widthDots}
+            codePage={codePage}
+            onUpdateWidth={handleUpdateWidth}
+            onUpdateCodePage={setCodePage}
+          />
+        )}
 
         <main className="viewer-panel glass-panel">
           {/* Barra Superior da Área de Impressão */}
@@ -376,7 +386,7 @@ export const App: React.FC = () => {
 
           {/* Área Central: Visualizador da Bobina Térmica ou Editor */}
           {activeTab === 'receipt' ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 330px', gap: '16px', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: showPreview ? '1fr 315px' : '1fr', gap: '16px', flex: 1, minHeight: 0, overflow: 'hidden' }}>
               {/* Painel Interativo de Notinha (Caixa / PDV) */}
               <ReceiptBuilder
                 widthDots={widthDots}
@@ -384,9 +394,11 @@ export const App: React.FC = () => {
               />
 
               {/* Prévia em tempo real na Bobina */}
-              <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                <ThermalViewer preview={virtualTextPreview} widthDots={widthDots} />
-              </div>
+              {showPreview && (
+                <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                  <ThermalViewer preview={virtualTextPreview} widthDots={widthDots} />
+                </div>
+              )}
             </div>
           ) : activeTab === 'file' ? (
             preview ? (
@@ -423,7 +435,7 @@ export const App: React.FC = () => {
               </div>
             )
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 330px', gap: '16px', flex: 1, minHeight: 0 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: showPreview ? '1fr 315px' : '1fr', gap: '16px', flex: 1, minHeight: 0 }}>
               {/* Editor de Texto com Contador de Colunas */}
               <div className="direct-text-wrapper">
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
@@ -477,9 +489,11 @@ export const App: React.FC = () => {
               </div>
 
               {/* Prévia em tempo real na Bobina */}
-              <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                <ThermalViewer preview={virtualTextPreview} widthDots={widthDots} />
-              </div>
+              {showPreview && (
+                <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                  <ThermalViewer preview={virtualTextPreview} widthDots={widthDots} />
+                </div>
+              )}
             </div>
           )}
 

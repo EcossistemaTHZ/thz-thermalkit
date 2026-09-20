@@ -1,12 +1,16 @@
 import React from 'react';
 import { PrinterDto } from '../types';
-import { Printer, Bluetooth, Usb, RefreshCw } from 'lucide-react';
+import { Printer, Bluetooth, Usb, RefreshCw, Sliders, Eye, EyeOff } from 'lucide-react';
 
 interface HeaderProps {
   selectedPrinter: PrinterDto | null;
   printersCount: number;
   onRefresh: () => void;
   isRefreshing: boolean;
+  showSidebar: boolean;
+  onToggleSidebar: () => void;
+  showPreview: boolean;
+  onTogglePreview: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -14,6 +18,10 @@ export const Header: React.FC<HeaderProps> = ({
   printersCount,
   onRefresh,
   isRefreshing,
+  showSidebar,
+  onToggleSidebar,
+  showPreview,
+  onTogglePreview,
 }) => {
   const isConnected = !!selectedPrinter;
   const isBt = selectedPrinter?.is_bluetooth;
@@ -30,7 +38,27 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {/* Toggle Painel Lateral */}
+        <button
+          className={`btn-secondary ${showSidebar ? 'active-toggle' : ''}`}
+          onClick={onToggleSidebar}
+          title={showSidebar ? 'Ocultar painel lateral da impressora' : 'Exibir painel lateral da impressora'}
+        >
+          <Sliders size={14} color={showSidebar ? 'var(--accent-bt)' : 'inherit'} />
+          <span>{showSidebar ? 'Ocultar Lateral' : 'Lateral'}</span>
+        </button>
+
+        {/* Toggle Prévia da Bobina */}
+        <button
+          className={`btn-secondary ${showPreview ? 'active-toggle' : ''}`}
+          onClick={onTogglePreview}
+          title={showPreview ? 'Ocultar prévia da bobina térmica' : 'Exibir prévia da bobina térmica'}
+        >
+          {showPreview ? <EyeOff size={14} /> : <Eye size={14} color="var(--accent-usb)" />}
+          <span>{showPreview ? 'Ocultar Bobina' : 'Ver Bobina'}</span>
+        </button>
+
         <button
           className="btn-secondary"
           onClick={onRefresh}
