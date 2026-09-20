@@ -1,8 +1,11 @@
 # THZ ThermalKit
 
 Ferramentas Windows para impressoras térmicas ESC/POS genéricas: descoberta USB, perfil persistente e impressão direta de texto, imagem e PDF sem depender do driver POS-58.
+É driverless, não precisa do spool Windows, é enviado diretamente comandos ESC/POS para a impressora e ela recebe -> imprime .
 
-![THZ ThermalKit Desktop](assets/thz-thermalkit-desktop.png)
+<img width="1117" height="870" alt="image" src="https://github.com/user-attachments/assets/473b1f8c-a066-49f6-bc2e-edb4115a67e6" />
+<img width="450" height="450" alt="image" src="https://github.com/user-attachments/assets/8b3ce366-bd47-43ef-ad10-714dec8ad6e5" /> 
+<img width="450" height="450" alt="IMG_20260919_231804441_HDR" src="https://github.com/user-attachments/assets/52963f07-e8a1-4e5d-b67d-6fbbd7e79392" />
 
 ## Validado em hardware
 
