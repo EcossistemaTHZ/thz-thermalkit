@@ -88,10 +88,14 @@ A enumeração dos dispositivos utiliza funções nativas da biblioteca `setupap
 - **`SetupDiGetClassDevsW`**: Enumera dispositivos de classe presentes no sistema.
 - **GUIDs Monitorados**:
   - `USBPRINT`: `{28D78FAD-5A12-11D1-AE5B-00F803A8C2}` — Impressoras conectadas via USB.
-  - `COMPORT`: `{86E0D1E0-8089-11D0-9CE4-083E301F73}` — Portas seriais virtuais ou físicas.
+  - `COMPORT`: `{86E0D1E0-8089-11D0-9CE4-083E301F73}` — Portas seriais virtuais ou físicas (incluindo Bluetooth SPP).
   - `USB_DEVICE`: `{A5DCBF10-6530-11D2-901F-00C04FB951ED}` — Inventário de hardware geral.
-- **Identificação**: Extrai strings de propriedades (`FRIENDLY_NAME`, `HARDWARE_ID`) para identificar `VID` (Vendor ID) e `PID` (Product ID).
-- **Acesso USB Direto**: Ao invés de usar `WritePrinter` da API WinSpool, abre diretamente o caminho da interface do dispositivo via `OpenOptions::new().write(true).open(&device.path)`.
+- **Identificação USB**: Extrai strings de propriedades (`FRIENDLY_NAME`, `HARDWARE_ID`) para identificar `VID` (Vendor ID) e `PID` (Product ID).
+- **Identificação Bluetooth SPP**: Inspeciona a propriedade `HARDWARE_ID` e o `DeviceInstanceId`. Se contiver o enumerador `BTHENUM` ou o UUID padrão do Serial Port Profile (`00001101-0000-1000-8000-00805F9B34FB`), o dispositivo é identificado e classificado como **Bluetooth (COM)**.
+- **Acesso Direto ao Hardware**:
+  - Em conexões USB: abre diretamente o caminho de dispositivo Win32 via `OpenOptions::new().write(true).open(&device.path)`.
+  - Em conexões Bluetooth / COM: abre o stream de porta serial via `serialport` no baud rate especificado (padrão: 9600) com timeout de escrita e flush síncrono.
+  - Ambas as abordagens eliminam completamente a necessidade de criação de filas de impressão no Windows ou instalação de drivers POS-58.
 
 ### 4.2. Tratamento de Codificação e Caracteres (Português / CP860)
 Impressoras ESC/POS genéricas normalmente não suportam UTF-8 nativamente.

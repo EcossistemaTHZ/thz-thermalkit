@@ -1,0 +1,15 @@
+{
+  "id": "generic-tech-cla58-bluetooth",
+  "name": "TECH CLA58 / MPT-II (Bluetooth)",
+  "transport": {
+    "type": "bluetooth",
+    "vid": null,
+    "pid": null,
+    "port": "COM6"
+  },
+  "protocol": "escpos",
+  "raster_mode": "gs-v-0",
+  "printable_width_dots": 384,
+  "baud": 9600,
+  "code_page": 3
+}

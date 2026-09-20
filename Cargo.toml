@@ -3,6 +3,7 @@ name = "thermal-probe"
 version = "0.1.0"
 edition = "2021"
 autobins = false
+default-run = "thermal-probe"
 
 [[bin]]
 name = "thermal-probe"

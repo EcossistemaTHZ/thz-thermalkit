@@ -5,8 +5,8 @@
 //!
 //! Aplicativo gráfico nativo para Windows construído com `eframe` / `egui`.
 //! Permite visualizar e imprimir documentos (TXT, PNG, JPG, PDF) diretamente em
-//! impressoras térmicas ESC/POS de 58 mm através de portas USB (`usbprint.sys`),
-//! com prévia em tempo real e confirmação de segurança.
+//! impressoras térmicas ESC/POS de 58 mm através de portas USB (`usbprint.sys`)
+//! ou conexões Bluetooth SPP / Serial COM (`BTHENUM`), sem uso do spooler do Windows.
 
 use eframe::egui;
 use image::{imageops::FilterType, GrayImage};
@@ -21,6 +21,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     ptr,
+    time::Duration,
 };
 
 // ============================================================================
@@ -46,6 +47,15 @@ const USBPRINT: Guid = Guid {
     d: [0xae, 0x5b, 0, 0, 0xf8, 0x03, 0xa8, 0xc2],
 };
 
+/// GUID para portas seriais COM e portas virtuais Bluetooth SPP.
+/// {86E0D1E0-8089-11D0-9CE4-083E301F73}
+const COMPORT: Guid = Guid {
+    a: 0x86e0d1e0,
+    b: 0x8089,
+    c: 0x11d0,
+    d: [0x9c, 0xe4, 0x08, 0, 0x3e, 0x30, 0x1f, 0x73],
+};
+
 /// Flag para enumerar interfaces ativas e presentes (DIGCF_PRESENT | DIGCF_DEVICEINTERFACE).
 const FLAGS: u32 = 0x12;
 
@@ -54,6 +64,9 @@ const FRIENDLY: u32 = 12;
 
 /// Constante para a lista de IDs de hardware no registro (SPDRP_HARDWAREID).
 const HARDWARE: u32 = 1;
+
+/// Constante para a descrição do dispositivo no registro (SPDRP_DEVICEDESC).
+const DEVICE_DESC: u32 = 0;
 
 /// Estrutura de dados de interface de dispositivo (SP_DEVICE_INTERFACE_DATA).
 #[repr(C)]
@@ -112,10 +125,13 @@ extern "system" {
 struct Profile {
     /// Nome descritivo da impressora.
     name: String,
-    /// Informações de transporte (USB / VID / PID).
+    /// Informações de transporte (USB, COM ou Bluetooth).
     transport: Transport,
     /// Largura útil de impressão em pontos (ex.: 384 dots).
     printable_width_dots: u32,
+    /// Taxa de transmissão para conexões seriais COM (padrão: 9600).
+    #[serde(default = "default_baud")]
+    baud: u32,
     /// Tabela de caracteres ESC/POS (padrão: 3 para CP860).
     #[serde(default = "code_page")]
     code_page: u8,
@@ -127,15 +143,42 @@ struct Transport {
     kind: String,
     vid: Option<String>,
     pid: Option<String>,
+    port: Option<String>,
 }
 
 fn code_page() -> u8 {
     3
 }
 
+fn default_baud() -> u32 {
+    9600
+}
+
 // ============================================================================
 // Descoberta e Comunicação Win32 Direta
 // ============================================================================
+
+/// Tipo de transporte ativo resolvido para a impressora.
+#[derive(Clone, Debug)]
+enum ActiveTransport {
+    /// Impressão direta via caminho Win32 USB Printer Class.
+    Usb(String),
+    /// Impressão direta via porta serial COM (física ou Bluetooth SPP).
+    Com {
+        port: String,
+        baud: u32,
+        is_bluetooth: bool,
+    },
+}
+
+/// Representa o dispositivo descoberto e pronto para comunicação direta.
+#[derive(Clone, Debug)]
+struct DiscoveredPrinter {
+    #[allow(dead_code)]
+    name: String,
+    transport: ActiveTransport,
+    display_info: String,
+}
 
 /// Converte fatia UTF-16 nula-terminada em `String`.
 fn z(w: &[u16]) -> String {
@@ -157,6 +200,14 @@ unsafe fn prop(s: isize, d: &Dev, k: u32) -> String {
     ))
 }
 
+/// Extrai o identificador da porta serial (ex.: "COM4") a partir do nome do dispositivo.
+fn com_from_name(name: &str) -> Option<String> {
+    let start = name.rfind("(COM")? + 1;
+    let end = name[start..].find(')')? + start;
+    let port = &name[start..end];
+    (port.len() > 3 && port[3..].chars().all(|c| c.is_ascii_digit())).then(|| port.to_string())
+}
+
 /// Extrai sequências hexadecimais de 4 caracteres (como VID ou PID) de strings de hardware.
 fn field(s: &str, t: &str) -> Option<String> {
     let u = s.to_ascii_uppercase();
@@ -169,80 +220,232 @@ fn field(s: &str, t: &str) -> Option<String> {
     (v.len() == 4).then_some(v)
 }
 
-/// Localiza a impressora conectada que corresponde aos parâmetros do perfil (VID/PID).
-/// Retorna o caminho direto de acesso ao dispositivo (`path`) e seu nome amigável (`name`).
-fn discover(p: &Profile) -> Result<(String, String), String> {
-    unsafe {
-        let s = SetupDiGetClassDevsW(&USBPRINT, ptr::null(), 0, FLAGS);
-        if s == -1 {
-            return Err("Windows não encontrou interfaces USB Printer Class".into());
+/// Localiza a impressora conectada que corresponde aos parâmetros do perfil (via USB ou Bluetooth/COM).
+fn discover(p: &Profile) -> Result<DiscoveredPrinter, String> {
+    // 1. Tentar localizar via USB Printer Class
+    if p.transport.kind == "usb-printer-class" {
+        unsafe {
+            let s = SetupDiGetClassDevsW(&USBPRINT, ptr::null(), 0, FLAGS);
+            if s != -1 {
+                let mut i = 0;
+                loop {
+                    let mut iface = Iface {
+                        size: mem::size_of::<Iface>() as u32,
+                        class: USBPRINT,
+                        flags: 0,
+                        reserved: 0,
+                    };
+                    if SetupDiEnumDeviceInterfaces(s, ptr::null(), &USBPRINT, i, &mut iface) == 0 {
+                        break;
+                    }
+                    i += 1;
+                    let mut need = 0;
+                    SetupDiGetDeviceInterfaceDetailW(
+                        s,
+                        &iface,
+                        ptr::null_mut(),
+                        0,
+                        &mut need,
+                        ptr::null_mut(),
+                    );
+                    if need < 6 {
+                        continue;
+                    }
+                    let mut data = vec![0u64; (need as usize).div_ceil(8)];
+                    let raw = data.as_mut_ptr() as *mut u8;
+                    *(raw as *mut u32) = if cfg!(target_pointer_width = "64") {
+                        8
+                    } else {
+                        6
+                    };
+                    let mut d = Dev {
+                        size: mem::size_of::<Dev>() as u32,
+                        class: USBPRINT,
+                        instance: 0,
+                        reserved: 0,
+                    };
+                    if SetupDiGetDeviceInterfaceDetailW(
+                        s,
+                        &iface,
+                        raw.cast(),
+                        need,
+                        &mut need,
+                        &mut d,
+                    ) == 0
+                    {
+                        continue;
+                    }
+                    let n = prop(s, &d, FRIENDLY);
+                    let name = if n.is_empty() {
+                        prop(s, &d, DEVICE_DESC)
+                    } else {
+                        n
+                    };
+                    let hw = prop(s, &d, HARDWARE);
+                    let vid = field(&hw, "VID_");
+                    let pid = field(&hw, "PID_");
+
+                    if p.transport
+                        .vid
+                        .as_ref()
+                        .is_none_or(|v| vid.as_ref().is_some_and(|x| x.eq_ignore_ascii_case(v)))
+                        && p.transport
+                            .pid
+                            .as_ref()
+                            .is_none_or(|v| pid.as_ref().is_some_and(|x| x.eq_ignore_ascii_case(v)))
+                    {
+                        let path = z(std::slice::from_raw_parts(
+                            raw.add(4) as *const u16,
+                            (need as usize - 4) / 2,
+                        ));
+                        SetupDiDestroyDeviceInfoList(s);
+                        return Ok(DiscoveredPrinter {
+                            name: if name.is_empty() {
+                                p.name.clone()
+                            } else {
+                                name
+                            },
+                            transport: ActiveTransport::Usb(path),
+                            display_info: format!("Conectada via USB ({})", p.name),
+                        });
+                    }
+                }
+                SetupDiDestroyDeviceInfoList(s);
+            }
         }
-        let mut i = 0;
-        loop {
-            let mut iface = Iface {
-                size: mem::size_of::<Iface>() as u32,
-                class: USBPRINT,
-                flags: 0,
-                reserved: 0,
-            };
-            if SetupDiEnumDeviceInterfaces(s, ptr::null(), &USBPRINT, i, &mut iface) == 0 {
-                break;
-            }
-            i += 1;
-            let mut need = 0;
-            SetupDiGetDeviceInterfaceDetailW(
-                s,
-                &iface,
-                ptr::null_mut(),
-                0,
-                &mut need,
-                ptr::null_mut(),
-            );
-            if need < 6 {
-                continue;
-            }
-            let mut data = vec![0u64; (need as usize + 7) / 8];
-            let raw = data.as_mut_ptr() as *mut u8;
-            *(raw as *mut u32) = if cfg!(target_pointer_width = "64") {
-                8
-            } else {
-                6
-            };
-            let mut d = Dev {
-                size: mem::size_of::<Dev>() as u32,
-                class: USBPRINT,
-                instance: 0,
-                reserved: 0,
-            };
-            if SetupDiGetDeviceInterfaceDetailW(s, &iface, raw.cast(), need, &mut need, &mut d) == 0
-            {
-                continue;
-            }
-            let name = prop(s, &d, FRIENDLY);
-            let hw = prop(s, &d, HARDWARE);
-            let vid = field(&hw, "VID_");
-            let pid = field(&hw, "PID_");
-            if p.transport.kind == "usb-printer-class"
-                && p.transport
-                    .vid
-                    .as_ref()
-                    .is_none_or(|v| vid.as_ref().is_some_and(|x| x.eq_ignore_ascii_case(v)))
-                && p.transport
-                    .pid
-                    .as_ref()
-                    .is_none_or(|v| pid.as_ref().is_some_and(|x| x.eq_ignore_ascii_case(v)))
-            {
+    }
+
+    // 2. Tentar localizar via portas COM (incluindo Bluetooth SPP do BTHENUM)
+    unsafe {
+        let s = SetupDiGetClassDevsW(&COMPORT, ptr::null(), 0, FLAGS);
+        if s != -1 {
+            let mut i = 0;
+            loop {
+                let mut iface = Iface {
+                    size: mem::size_of::<Iface>() as u32,
+                    class: COMPORT,
+                    flags: 0,
+                    reserved: 0,
+                };
+                if SetupDiEnumDeviceInterfaces(s, ptr::null(), &COMPORT, i, &mut iface) == 0 {
+                    break;
+                }
+                i += 1;
+                let mut need = 0;
+                SetupDiGetDeviceInterfaceDetailW(
+                    s,
+                    &iface,
+                    ptr::null_mut(),
+                    0,
+                    &mut need,
+                    ptr::null_mut(),
+                );
+                if need < 6 {
+                    continue;
+                }
+                let mut data = vec![0u64; (need as usize).div_ceil(8)];
+                let raw = data.as_mut_ptr() as *mut u8;
+                *(raw as *mut u32) = if cfg!(target_pointer_width = "64") {
+                    8
+                } else {
+                    6
+                };
+                let mut d = Dev {
+                    size: mem::size_of::<Dev>() as u32,
+                    class: COMPORT,
+                    instance: 0,
+                    reserved: 0,
+                };
+                if SetupDiGetDeviceInterfaceDetailW(s, &iface, raw.cast(), need, &mut need, &mut d)
+                    == 0
+                {
+                    continue;
+                }
                 let path = z(std::slice::from_raw_parts(
                     raw.add(4) as *const u16,
                     (need as usize - 4) / 2,
                 ));
-                SetupDiDestroyDeviceInfoList(s);
-                return Ok((path, name));
+                let path_upper = path.to_ascii_uppercase();
+                let n = prop(s, &d, FRIENDLY);
+                let name = if n.is_empty() {
+                    prop(s, &d, DEVICE_DESC)
+                } else {
+                    n
+                };
+                let hw = prop(s, &d, HARDWARE);
+                let port = com_from_name(&name);
+
+                // Dispositivos Bluetooth SPP possuem IDs com BTHENUM ou BTH\
+                let hw_upper = hw.to_ascii_uppercase();
+                let name_upper = name.to_ascii_uppercase();
+                let is_bluetooth = hw_upper.contains("BTHENUM")
+                    || hw_upper.contains("BTH\\")
+                    || path_upper.contains("BTHENUM")
+                    || name_upper.contains("BLUETOOTH");
+
+                let matches_configured_port = p.transport.port.as_ref().is_some_and(|configured| {
+                    port.as_ref()
+                        .is_some_and(|p| p.eq_ignore_ascii_case(configured))
+                });
+
+                // Só considera correspondência se:
+                // 1. A porta bater exatamente com a porta configurada no perfil (ex.: "COM6"); OU
+                // 2. O perfil for "bluetooth" ou "com" e o nome do dispositivo ou porta coincidir com o perfil; OU
+                // 3. O dispositivo Bluetooth contiver identificadores de impressora térmica (MPT, CLA58, POS, PRINTER, ou MAC da MPT-II).
+                let is_printer_name = name_upper.contains("MPT")
+                    || name_upper.contains("CLA58")
+                    || name_upper.contains("POS")
+                    || name_upper.contains("PRINTER")
+                    || name_upper.contains(&p.name.to_ascii_uppercase())
+                    || path_upper.contains("DC0D51597B0C")
+                    || hw_upper.contains("DC0D51597B0C"); // MAC da impressora MPT-II
+
+                let is_matching_device = if p.transport.port.is_some() {
+                    matches_configured_port
+                } else if p.transport.kind == "bluetooth" {
+                    is_bluetooth && is_printer_name
+                } else if p.transport.kind == "com" {
+                    matches_configured_port || is_printer_name
+                } else {
+                    // Perfil USB: só aceita fallback Bluetooth se o dispositivo for comprovadamente a impressora térmica
+                    is_bluetooth && is_printer_name
+                };
+
+                if let Some(port_name) = port {
+                    if is_matching_device {
+                        SetupDiDestroyDeviceInfoList(s);
+                        let display_label = if is_bluetooth {
+                            let clean_name =
+                                if is_printer_name && !name_upper.contains("SERIAL PADR") {
+                                    name.as_str()
+                                } else {
+                                    "TECH CLA58 / MPT-II"
+                                };
+                            format!("Conectada via Bluetooth: {clean_name} ({port_name})")
+                        } else {
+                            format!("Conectada via Porta Serial ({port_name})")
+                        };
+                        return Ok(DiscoveredPrinter {
+                            name: if name.is_empty() {
+                                p.name.clone()
+                            } else {
+                                name
+                            },
+                            transport: ActiveTransport::Com {
+                                port: port_name,
+                                baud: p.baud,
+                                is_bluetooth,
+                            },
+                            display_info: display_label,
+                        });
+                    }
+                }
             }
+            SetupDiDestroyDeviceInfoList(s);
         }
-        SetupDiDestroyDeviceInfoList(s);
-        Err("A impressora do perfil não está conectada via USB Printing Port".into())
     }
+
+    Err("Impressora não encontrada via USB ou Bluetooth/COM. Verifique o pareamento Bluetooth ou a conexão do cabo USB.".into())
 }
 
 // ============================================================================
@@ -389,15 +592,15 @@ impl App {
         }
     }
 
-    /// Atualiza o status de detecção da impressora via USB Printer Class.
+    /// Atualiza o status de detecção da impressora via USB Printer Class ou Bluetooth/COM.
     fn refresh_device(&mut self) {
         self.device = match &self.profile {
             Some(p) => match discover(p) {
-                Ok((_, n)) => format!("Conectada: {n}"),
+                Ok(d) => d.display_info,
                 Err(e) => format!("Não encontrada: {e}"),
             },
             None => "Nenhum perfil carregado".into(),
-        }
+        };
     }
 
     /// Carrega a textura para a área de prévia visual da tela.
@@ -492,7 +695,7 @@ impl App {
         Ok(())
     }
 
-    /// Envia o documento processado diretamente para o dispositivo USB da impressora.
+    /// Envia o documento processado diretamente para o dispositivo da impressora (USB ou Bluetooth/COM).
     fn print(&mut self) {
         let p = match &self.profile {
             Some(p) => p.clone(),
@@ -501,13 +704,14 @@ impl App {
                 return;
             }
         };
-        let path = match discover(&p) {
-            Ok((x, _)) => x,
+        let discovered = match discover(&p) {
+            Ok(d) => d,
             Err(e) => {
                 self.message = e;
                 return;
             }
         };
+
         let mut bytes = vec![0x1b, b'@']; // Reset de sessão ESC @
         match &self.doc {
             Document::Text(t) => {
@@ -528,12 +732,43 @@ impl App {
                 return;
             }
         }
-        match OpenOptions::new().write(true).open(path).and_then(|mut f| {
-            f.write_all(&bytes)?;
-            f.flush()
-        }) {
-            Ok(_) => self.message = "Enviado para a impressora.".into(),
-            Err(e) => self.message = format!("Falha ao imprimir: {e}"),
+
+        match &discovered.transport {
+            ActiveTransport::Usb(path) => {
+                match OpenOptions::new().write(true).open(path).and_then(|mut f| {
+                    f.write_all(&bytes)?;
+                    f.flush()
+                }) {
+                    Ok(_) => self.message = "Enviado com sucesso via USB.".into(),
+                    Err(e) => self.message = format!("Falha ao imprimir via USB: {e}"),
+                }
+            }
+            ActiveTransport::Com {
+                port,
+                baud,
+                is_bluetooth,
+            } => {
+                let label = if *is_bluetooth {
+                    "Bluetooth"
+                } else {
+                    "Porta Serial COM"
+                };
+                match serialport::new(port, *baud)
+                    .timeout(Duration::from_secs(10))
+                    .open()
+                    .map_err(|e| std::io::Error::other(e.to_string()))
+                    .and_then(|mut s| {
+                        s.write_all(&bytes)?;
+                        s.flush()
+                    }) {
+                    Ok(_) => {
+                        self.message = format!("Enviado com sucesso via {label} ({port}).");
+                    }
+                    Err(e) => {
+                        self.message = format!("Falha ao comunicar via {label} ({port}): {e}");
+                    }
+                }
+            }
         }
     }
 }
@@ -548,8 +783,16 @@ impl eframe::App for App {
             style.spacing.item_spacing = egui::vec2(10.0, 10.0);
             style.spacing.button_padding = egui::vec2(12.0, 8.0);
         });
+
         let connected = self.device.starts_with("Conectada");
-        let accent = egui::Color32::from_rgb(51, 211, 153);
+        let is_bluetooth = self.device.contains("Bluetooth");
+
+        // Cores temáticas: Azul céu para Bluetooth, Verde Esmeralda para USB, Vermelho para desconectado
+        let accent = if is_bluetooth {
+            egui::Color32::from_rgb(56, 189, 248)
+        } else {
+            egui::Color32::from_rgb(51, 211, 153)
+        };
 
         // Barra Superior: Título e Status de Conexão
         egui::TopBottomPanel::top("top")
@@ -561,13 +804,13 @@ impl eframe::App for App {
                         ui.add_space(10.0);
                         ui.heading(egui::RichText::new("THZ ThermalKit").size(27.0).strong());
                         ui.label(
-                            egui::RichText::new("Impressão térmica direta")
+                            egui::RichText::new("Impressão térmica direta (USB & Bluetooth SPP)")
                                 .color(egui::Color32::GRAY),
                         );
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.add_space(12.0);
-                        let color = if connected {
+                        let indicator_color = if connected {
                             accent
                         } else {
                             egui::Color32::from_rgb(244, 114, 94)
@@ -575,16 +818,21 @@ impl eframe::App for App {
                         ui.horizontal(|ui| {
                             ui.label(
                                 egui::RichText::new(if connected {
-                                    "CLA58 conectada"
+                                    if is_bluetooth {
+                                        "Conectada via Bluetooth"
+                                    } else {
+                                        "Conectada via USB"
+                                    }
                                 } else {
                                     "Impressora não encontrada"
                                 })
-                                .color(color)
+                                .color(indicator_color)
                                 .strong(),
                             );
                             let (rect, _) = ui
                                 .allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
-                            ui.painter().circle_filled(rect.center(), 4.0, color);
+                            ui.painter()
+                                .circle_filled(rect.center(), 4.0, indicator_color);
                         });
                     });
                 });
@@ -681,10 +929,18 @@ impl eframe::App for App {
                 // Botão de Disparo da Impressão
                 let ready =
                     !matches!(self.doc, Document::None) && self.profile.is_some() && connected;
+                let print_btn_text = egui::RichText::new("Imprimir")
+                    .size(18.0)
+                    .color(if ready {
+                        egui::Color32::from_rgb(12, 17, 23)
+                    } else {
+                        egui::Color32::GRAY
+                    })
+                    .strong();
                 if ui
                     .add_enabled(
                         ready,
-                        egui::Button::new(egui::RichText::new("Imprimir").size(18.0).strong())
+                        egui::Button::new(print_btn_text)
                             .fill(accent)
                             .min_size(egui::vec2(250.0, 46.0)),
                     )
@@ -697,9 +953,11 @@ impl eframe::App for App {
 
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                     ui.label(
-                        egui::RichText::new("USB direto • ESC/POS • 384 dots • CP860")
-                            .small()
-                            .color(egui::Color32::DARK_GRAY),
+                        egui::RichText::new(
+                            "USB & Bluetooth SPP direto • ESC/POS • 384 dots • CP860",
+                        )
+                        .small()
+                        .color(egui::Color32::DARK_GRAY),
                     );
                 });
             });
@@ -756,7 +1014,12 @@ impl eframe::App for App {
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
                     ui.set_min_width(330.0);
-                    ui.label("O documento será enviado para a CLA58 conectada.");
+                    let target_info = if self.device.starts_with("Conectada via ") {
+                        &self.device["Conectada via ".len()..]
+                    } else {
+                        &self.device
+                    };
+                    ui.label(format!("O documento será enviado via {target_info}."));
                     ui.label(
                         egui::RichText::new("Sem corte, gaveta ou comandos de configuração.")
                             .color(egui::Color32::GRAY),
@@ -767,7 +1030,14 @@ impl eframe::App for App {
                             self.confirm = false
                         }
                         if ui
-                            .add(egui::Button::new("Confirmar e imprimir").fill(accent))
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("Confirmar e imprimir")
+                                        .color(egui::Color32::from_rgb(12, 17, 23))
+                                        .strong(),
+                                )
+                                .fill(accent),
+                            )
                             .clicked()
                         {
                             self.confirm = false;
@@ -792,4 +1062,74 @@ fn main() -> eframe::Result<()> {
         },
         Box::new(|cc| Ok(Box::new(App::new(cc)))),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_discover_bluetooth_com6() {
+        let profile = Profile {
+            name: "TECH CLA58".into(),
+            transport: Transport {
+                kind: "bluetooth".into(),
+                vid: None,
+                pid: None,
+                port: Some("COM6".into()),
+            },
+            printable_width_dots: 384,
+            baud: 9600,
+            code_page: 3,
+        };
+        let res = discover(&profile);
+        assert!(
+            res.is_ok(),
+            "Falha ao descobrir impressora na COM6: {:?}",
+            res
+        );
+        if let Ok(d) = res {
+            match d.transport {
+                ActiveTransport::Com {
+                    port, is_bluetooth, ..
+                } => {
+                    assert_eq!(port, "COM6");
+                    assert!(is_bluetooth);
+                }
+                _ => panic!("Esperado transporte COM"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_discover_fallback_to_mpt_ii() {
+        let profile = Profile {
+            name: "TECH CLA58".into(),
+            transport: Transport {
+                kind: "usb-printer-class".into(),
+                vid: Some("9999".into()), // VID inexistente para simular USB desconectado
+                pid: Some("9999".into()),
+                port: None,
+            },
+            printable_width_dots: 384,
+            baud: 9600,
+            code_page: 3,
+        };
+        let res = discover(&profile);
+        assert!(res.is_ok(), "Falha no fallback para MPT-II: {:?}", res);
+        if let Ok(d) = res {
+            match d.transport {
+                ActiveTransport::Com {
+                    port, is_bluetooth, ..
+                } => {
+                    assert_eq!(
+                        port, "COM6",
+                        "Deveria selecionar COM6 (MPT-II) e ignorar COM3 (caixa de som)"
+                    );
+                    assert!(is_bluetooth);
+                }
+                _ => panic!("Esperado fallback para Bluetooth na COM6"),
+            }
+        }
+    }
 }

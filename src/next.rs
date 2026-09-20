@@ -287,7 +287,7 @@ fn enumerate(class: &Guid, transport: &'static str) -> io::Result<Vec<Device>> {
             }
 
             // Aloca buffer alinhado para SP_DEVICE_INTERFACE_DETAIL_DATA_W
-            let mut detail = vec![0u64; (required as usize + 7) / 8];
+            let mut detail = vec![0u64; (required as usize).div_ceil(8)];
             let raw = detail.as_mut_ptr() as *mut u8;
             // cbSize deve ser 8 bytes em x64 e 6 bytes (ou 5/6 empacotado) em x86
             *(raw as *mut u32) = if cfg!(target_pointer_width = "64") {
@@ -350,8 +350,15 @@ fn enumerate(class: &Guid, transport: &'static str) -> io::Result<Vec<Device>> {
                 None
             };
 
+            let is_bt = transport == "COM"
+                && (hardware.to_ascii_uppercase().contains("BTHENUM")
+                    || hardware.to_ascii_uppercase().contains("BTH\\")
+                    || instance.to_ascii_uppercase().contains("BTHENUM")
+                    || name.to_ascii_uppercase().contains("BLUETOOTH"));
+            let resolved_transport = if is_bt { "Bluetooth (COM)" } else { transport };
+
             found.push(Device {
-                transport,
+                transport: resolved_transport,
                 name,
                 path,
                 instance,
@@ -420,7 +427,7 @@ fn print_devices(devices: &[Device]) {
 
 /// Indica se o dispositivo possui transporte que suporta escrita direta de impressão.
 fn printable(d: &Device) -> bool {
-    d.transport == "USB Printer Class" || (d.transport == "COM" && d.port.is_some())
+    d.transport == "USB Printer Class" || (d.transport.contains("COM") && d.port.is_some())
 }
 
 /// Solicita ao operador a seleção de um dispositivo da lista ou utiliza o índice fornecido.
@@ -442,7 +449,9 @@ fn choose_device(
     };
     let d = devices.get(index).ok_or("invalid device number")?.clone();
     if !printable(&d) {
-        return Err("selected device has no direct USB Printer Class or COM transport".into());
+        return Err(
+            "selected device has no direct USB Printer Class or COM/Bluetooth transport".into(),
+        );
     }
     Ok(d)
 }
@@ -670,8 +679,13 @@ fn device_for_profile(
     ds.iter()
         .find(|d| {
             let (v, pid) = vid_pid(d);
-            (p.transport.kind == "usb-printer-class" && d.transport == "USB Printer Class"
-                || p.transport.kind == "com" && d.transport == "COM")
+            let is_usb =
+                p.transport.kind == "usb-printer-class" && d.transport == "USB Printer Class";
+            let is_com = (p.transport.kind == "com"
+                || p.transport.kind == "bluetooth"
+                || p.transport.kind == "bluetooth-spp")
+                && d.transport.contains("COM");
+            (is_usb || is_com)
                 && p.transport
                     .vid
                     .as_ref()
@@ -712,10 +726,14 @@ fn create_profile(ds: &[Device], args: &[String]) -> Result<(), Box<dyn std::err
     let p = PrinterProfile {
         id: option_string(args, "--id")
             .unwrap_or_else(|| format!("generic-{}-raster", safe_name(&d.name))),
-        name: d.name,
+        name: d.name.clone(),
         transport: TransportProfile {
-            kind: if d.transport == "COM" {
-                "com".into()
+            kind: if d.transport.contains("COM") {
+                if d.transport.starts_with("Bluetooth") {
+                    "bluetooth".into()
+                } else {
+                    "com".into()
+                }
             } else {
                 "usb-printer-class".into()
             },
