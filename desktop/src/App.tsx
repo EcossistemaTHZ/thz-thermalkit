@@ -241,6 +241,30 @@ export const App: React.FC = () => {
     setDirectText((prev) => prev + '\n--------------------------------\n');
   };
 
+  const [isFeeding, setIsFeeding] = useState(false);
+
+  // Avançar Bobina de Papel (Feed)
+  const handleFeedPaper = async () => {
+    if (!selectedPrinter) {
+      showToast('error', 'Selecione uma impressora conectada para avançar o papel.');
+      return;
+    }
+
+    setIsFeeding(true);
+    try {
+      const msg = await invoke<string>('feed_paper', {
+        targetTransport: selectedPrinter.transport_type,
+        targetParam: selectedPrinter.target,
+        lines: 4,
+      });
+      showToast('success', msg);
+    } catch (err) {
+      showToast('error', `Falha ao avançar papel: ${String(err)}`);
+    } finally {
+      setIsFeeding(false);
+    }
+  };
+
   return (
     <div className="app-container">
       {/* Toast Notification Banner */}
@@ -261,6 +285,8 @@ export const App: React.FC = () => {
         onToggleSidebar={() => setShowSidebar((prev) => !prev)}
         showPreview={showPreview}
         onTogglePreview={() => setShowPreview((prev) => !prev)}
+        onFeedPaper={handleFeedPaper}
+        isFeeding={isFeeding}
       />
 
       {/* Conteúdo Principal Dividido (Sidebar + Área de Bobina Térmica) */}

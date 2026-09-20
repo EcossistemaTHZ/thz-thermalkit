@@ -306,6 +306,27 @@ fn print_test_probe(target_transport: String, target_param: String) -> Result<St
     Ok("Teste de diagnóstico ESC/POS enviado com sucesso!".into())
 }
 
+#[tauri::command]
+fn feed_paper(target_transport: String, target_param: String, lines: Option<u8>) -> Result<String, String> {
+    let transport = match target_transport.as_str() {
+        "usb" => ActiveTransport::Usb(target_param),
+        "com" | "bluetooth" => ActiveTransport::Com {
+            port: target_param,
+            baud: 9600,
+            is_bluetooth: true,
+        },
+        _ => return Err("Transporte inválido".into()),
+    };
+
+    let count = lines.unwrap_or(4);
+    // ESC d <count> (Print and feed n lines) seguido de \n
+    let bytes = vec![0x1b, b'd', count, b'\n'];
+
+    write_payload(&transport, &bytes).map_err(|e| format!("Erro ao avançar papel: {e}"))?;
+
+    Ok("Papel avançado!".into())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -314,7 +335,8 @@ pub fn run() {
             pick_document,
             preview_file,
             print_job,
-            print_test_probe
+            print_test_probe,
+            feed_paper
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

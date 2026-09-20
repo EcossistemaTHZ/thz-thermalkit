@@ -1,6 +1,6 @@
 import React from 'react';
 import { PrinterDto } from '../types';
-import { Printer, Bluetooth, Usb, RefreshCw, Sliders, Eye, EyeOff } from 'lucide-react';
+import { Printer, Bluetooth, Usb, RefreshCw, Sliders, Eye, EyeOff, ChevronsDown } from 'lucide-react';
 
 interface HeaderProps {
   selectedPrinter: PrinterDto | null;
@@ -11,6 +11,8 @@ interface HeaderProps {
   onToggleSidebar: () => void;
   showPreview: boolean;
   onTogglePreview: () => void;
+  onFeedPaper: () => void;
+  isFeeding: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -22,6 +24,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleSidebar,
   showPreview,
   onTogglePreview,
+  onFeedPaper,
+  isFeeding,
 }) => {
   const isConnected = !!selectedPrinter;
   const isBt = selectedPrinter?.is_bluetooth;
@@ -57,6 +61,23 @@ export const Header: React.FC<HeaderProps> = ({
         >
           {showPreview ? <EyeOff size={14} /> : <Eye size={14} color="var(--accent-usb)" />}
           <span>{showPreview ? 'Ocultar Bobina' : 'Ver Bobina'}</span>
+        </button>
+
+        {/* Botão Feed / Avançar Papel */}
+        <button
+          className="btn-secondary"
+          onClick={onFeedPaper}
+          disabled={!selectedPrinter || isFeeding}
+          title={selectedPrinter ? "Avançar bobina na impressora física (Feed)" : "Conecte uma impressora para avançar papel"}
+          style={{
+            borderColor: selectedPrinter ? 'rgba(56, 189, 248, 0.35)' : undefined,
+          }}
+        >
+          <ChevronsDown
+            size={15}
+            color={selectedPrinter ? "var(--accent-bt)" : "var(--text-muted)"}
+          />
+          <span>{isFeeding ? "Avançando..." : "Avançar Papel"}</span>
         </button>
 
         <button
