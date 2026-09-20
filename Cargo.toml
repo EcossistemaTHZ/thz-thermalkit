@@ -1,0 +1,21 @@
+[package]
+name = "thermal-probe"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[[bin]]
+name = "thermal-probe"
+path = "src/next.rs"
+
+[[bin]]
+name = "thz-thermalkit"
+path = "src/desktop.rs"
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+eframe = { version = "0.31", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+rfd = "0.15"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serialport = { version = "4", default-features = false }

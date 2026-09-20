@@ -1,0 +1,7 @@
+/target/
+/work/
+/outputs/
+*.log
+teste.txt
+.DS_Store
+Thumbs.db
