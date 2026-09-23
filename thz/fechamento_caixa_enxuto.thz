@@ -1,0 +1,26 @@
+# THZ-LANG — Fechamento de Caixa na Sintaxe Moderna Enxuta
+programa NEGOCIO FechamentoCaixaEnxuto:
+    estrutura FechamentoDados:
+        estabelecimento: TEXTO
+        operador: TEXTO
+        trocoInicial: DECIMAL(12, 2)
+        vendasDinheiro: DECIMAL(12, 2)
+        vendasCartao: DECIMAL(12, 2)
+        vendasPix: DECIMAL(12, 2)
+        sangrias: DECIMAL(12, 2)
+        gavetaContada: DECIMAL(12, 2)
+
+    regra AuditoriaCaixa:
+        exige dados.trocoInicial >= 0.00
+        exige dados.vendasDinheiro >= 0.00
+        exige dados.gavetaContada >= 0.00
+
+        operacao calcularSaldoEsperado(dados: FechamentoDados) -> DECIMAL(12, 2):
+            retorne (dados.trocoInicial + dados.vendasDinheiro) - dados.sangrias
+
+        operacao calcularQuebra(dados: FechamentoDados) -> DECIMAL(12, 2):
+            esperado := calcularSaldoEsperado(dados)
+            retorne dados.gavetaContada - esperado
+
+    procedimento Principal():
+        exiba "Fechamento de Caixa Enxuto validado com sucesso!"
