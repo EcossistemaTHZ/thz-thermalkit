@@ -2,6 +2,7 @@
 /work/
 /outputs/
 /toolchain/
+.vscode/
 *.log
 teste.txt
 .DS_Store
