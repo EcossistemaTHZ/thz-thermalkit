@@ -588,5 +588,3 @@ pub fn write_payload(transport: &ActiveTransport, bytes: &[u8]) -> io::Result<()
         }
     }
 }
-
-pub mod thz_engine;

@@ -36,6 +36,7 @@ ESTRUTURA VendaCabecalho
     cnpjEstabelecimento: TEXTO
     clienteNome: TEXTO
     clienteCpfCnpj: TEXTO
+    totalItens: INTEIRO32
     itens: FATIA[ItemVenda]
     descontoGeral: DECIMAL(12, 2)
     acrescimoGeral: DECIMAL(12, 2)
@@ -91,7 +92,7 @@ REGRA_NEGOCIO ProcessamentoVenda
         FIM_SE
         corpoItens <- corpoItens + divSimples + "\n"
 
-        VARIAVEL totalItensFatia: INTEIRO <- FATIA.tamanho(venda.itens)
+        VARIAVEL totalItensFatia: INTEIRO32 <- venda.totalItens
         SE totalItensFatia > 0
             PARA idx DE 0 ATE (totalItensFatia - 1) FACA
                 VARIAVEL item: ItemVenda <- venda.itens[idx]
@@ -188,6 +189,7 @@ REGRA_NEGOCIO InterfaceCupomVenda
             cnpjEstabelecimento: "12.345.678/0001-90",
             clienteNome: "Consumidor Final",
             clienteCpfCnpj: "000.000.000-00",
+            totalItens: 3,
             itens: listaItens,
             descontoGeral: 0.00,
             acrescimoGeral: 0.00,
@@ -214,6 +216,7 @@ INICIO
         cnpjEstabelecimento: "12.345.678/0001-90",
         clienteNome: "Consumidor Final",
         clienteCpfCnpj: "000.000.000-00",
+        totalItens: 3,
         itens: listaItens,
         descontoGeral: 0.00,
         acrescimoGeral: 0.00,
