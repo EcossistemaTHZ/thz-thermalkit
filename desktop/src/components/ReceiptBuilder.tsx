@@ -2,11 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   ReceiptData,
   ReceiptItem,
-  StoreInfo,
   ConsumerInfo,
   buildReceiptText,
   formatCurrency,
 } from '../utils/receiptFormatter';
+import { StoreProfileDto } from '../types';
 import {
   Plus,
   Trash2,
@@ -25,23 +25,29 @@ import {
   FileText,
   User,
   Clock,
+  Settings,
 } from 'lucide-react';
 
 interface ReceiptBuilderProps {
   widthDots: number;
+  storeProfile: StoreProfileDto | null;
   onReceiptChange: (compiledText: string) => void;
+  onOpenSettings?: () => void;
 }
 
 const STORAGE_KEY_STORE = 'thz_thermalkit_nonfiscal_store';
 
 export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
   widthDots,
+  storeProfile,
   onReceiptChange,
+  onOpenSettings,
 }) => {
   const maxCols = widthDots === 576 ? 48 : 32;
 
-  // 1. Dados do Estabelecimento (persistidos em LocalStorage)
-  const [store, setStore] = useState<StoreInfo>(() => {
+  // 1. Dados do Estabelecimento (prioriza SQLite storeProfile, fallback local)
+  const [store, setStore] = useState<StoreProfileDto>(() => {
+    if (storeProfile) return storeProfile;
     try {
       const saved = localStorage.getItem(STORAGE_KEY_STORE);
       if (saved) return JSON.parse(saved);
@@ -52,9 +58,20 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
       name: 'PADARIA & CONFEITARIA CENTRAL',
       doc: '12.345.678/0001-90',
       phone: '(11) 98765-4321',
-      address: 'Rua das Flores, 120 - Centro - Cidade - UF',
+      street: 'Rua das Flores',
+      number: '120',
+      neighborhood: 'Centro',
+      city: 'São Paulo',
+      state: 'SP',
+      onboarding_completed: true,
     };
   });
+
+  useEffect(() => {
+    if (storeProfile) {
+      setStore(storeProfile);
+    }
+  }, [storeProfile]);
 
   const [isStoreSaved, setIsStoreSaved] = useState(false);
   const [isStoreExpanded, setIsStoreExpanded] = useState(false);
@@ -339,21 +356,35 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
               <input
                 className="pos-input"
                 type="text"
-                value={store.address}
+                value={store.address || ''}
                 onChange={(e) => setStore({ ...store, address: e.target.value })}
                 placeholder="Rua das Flores, 120 - Centro - Cidade - UF"
               />
             </div>
 
-            <button
-              type="button"
-              className="btn-secondary"
-              style={{ alignSelf: 'flex-start', padding: '6px 12px', fontSize: '0.75rem', marginTop: '4px' }}
-              onClick={handleSaveStore}
-            >
-              <Save size={13} color="var(--accent-usb)" />
-              <span>Salvar Dados como Padrão</span>
-            </button>
+            <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+                onClick={handleSaveStore}
+              >
+                <Save size={13} color="var(--accent-usb)" />
+                <span>Salvar Dados</span>
+              </button>
+
+              {onOpenSettings && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: '6px 12px', fontSize: '0.75rem', gap: '6px' }}
+                  onClick={onOpenSettings}
+                >
+                  <Settings size={13} color="var(--accent-bt)" />
+                  <span>Painel de Configurações</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

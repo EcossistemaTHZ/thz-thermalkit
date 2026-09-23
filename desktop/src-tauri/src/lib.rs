@@ -21,6 +21,16 @@ use thermal_core::{
     write_payload, ActiveTransport,
 };
 
+mod db;
+use db::{
+    create_config_snapshot_db, create_database_backup_db, export_receipts_csv_db,
+    export_white_label_bundle_db, get_app_config_db, get_database_stats_db,
+    get_store_profile_db, import_white_label_bundle_db, list_config_snapshots_db,
+    list_receipt_history_db, rollback_config_snapshot_db, save_app_config_db,
+    save_receipt_history_db, save_store_profile_db, vacuum_database_db, AppConfig,
+    ConfigSnapshot, DatabaseStats, ReceiptHistoryItem, StoreProfile,
+};
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PrinterDto {
     pub name: String,
@@ -220,7 +230,7 @@ fn print_job(req: PrintJobRequest) -> Result<String, String> {
 
     let mut bytes = vec![0x1b, b'@']; // Reset ESC @
 
-    if let Some(text) = req.direct_text {
+    if let Some(ref text) = req.direct_text {
         bytes.extend_from_slice(&[0x1b, b't', code_page]);
         bytes.extend(text_bytes(&text));
         if !bytes.ends_with(b"\n") {
@@ -289,6 +299,10 @@ fn print_job(req: PrintJobRequest) -> Result<String, String> {
 
     write_payload(&transport, &bytes).map_err(|e| format!("Erro de comunicação física: {e}"))?;
 
+    if let Some(text) = &req.direct_text {
+        let _ = save_receipt_history_db(None, None, 0, None, text);
+    }
+
     Ok("Impressão enviada com sucesso!".into())
 }
 
@@ -332,6 +346,107 @@ fn feed_paper(target_transport: String, target_param: String, lines: Option<u8>)
     Ok("Papel avançado!".into())
 }
 
+#[tauri::command]
+fn get_store_profile() -> Result<StoreProfile, String> {
+    get_store_profile_db()
+}
+
+#[tauri::command]
+fn save_store_profile(profile: StoreProfile) -> Result<(), String> {
+    save_store_profile_db(&profile)
+}
+
+#[tauri::command]
+fn get_app_config() -> Result<AppConfig, String> {
+    get_app_config_db()
+}
+
+#[tauri::command]
+fn save_app_config(config: AppConfig) -> Result<(), String> {
+    save_app_config_db(&config)
+}
+
+#[tauri::command]
+fn get_database_stats() -> Result<DatabaseStats, String> {
+    get_database_stats_db()
+}
+
+#[tauri::command]
+fn vacuum_database() -> Result<DatabaseStats, String> {
+    vacuum_database_db()
+}
+
+#[tauri::command]
+fn create_database_backup(destination: Option<String>) -> Result<String, String> {
+    let path = match destination {
+        Some(d) => d,
+        None => {
+            let file = FileDialog::new()
+                .set_title("Salvar Backup do Banco de Dados (.db)")
+                .set_file_name(&format!("backup_thz_thermal_{}.db", chrono::Local::now().format("%Y%m%d_%H%M%S")))
+                .add_filter("SQLite Database", &["db", "sqlite"])
+                .save_file();
+            match file {
+                Some(p) => p.to_string_lossy().to_string(),
+                None => return Err("Operação de backup cancelada".into()),
+            }
+        }
+    };
+    create_database_backup_db(&path)
+}
+
+#[tauri::command]
+fn create_config_snapshot(description: String) -> Result<i64, String> {
+    create_config_snapshot_db(&description)
+}
+
+#[tauri::command]
+fn list_config_snapshots() -> Result<Vec<ConfigSnapshot>, String> {
+    list_config_snapshots_db()
+}
+
+#[tauri::command]
+fn rollback_config_snapshot(snapshot_id: i64) -> Result<String, String> {
+    rollback_config_snapshot_db(snapshot_id)
+}
+
+#[tauri::command]
+fn export_white_label_bundle() -> Result<String, String> {
+    export_white_label_bundle_db()
+}
+
+#[tauri::command]
+fn import_white_label_bundle(json_str: String) -> Result<(), String> {
+    import_white_label_bundle_db(&json_str)
+}
+
+#[tauri::command]
+fn save_receipt_history(
+    order_number: Option<String>,
+    customer_name: Option<String>,
+    total_cents: i64,
+    payment_method: Option<String>,
+    raw_text: String,
+) -> Result<i64, String> {
+    save_receipt_history_db(
+        order_number.as_deref(),
+        customer_name.as_deref(),
+        total_cents,
+        payment_method.as_deref(),
+        &raw_text,
+    )
+}
+
+#[tauri::command]
+fn list_receipt_history(limit: Option<u32>) -> Result<Vec<ReceiptHistoryItem>, String> {
+    list_receipt_history_db(limit.unwrap_or(100))
+}
+
+#[tauri::command]
+fn export_receipts_csv() -> Result<String, String> {
+    export_receipts_csv_db()
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -341,7 +456,22 @@ pub fn run() {
             preview_file,
             print_job,
             print_test_probe,
-            feed_paper
+            feed_paper,
+            get_store_profile,
+            save_store_profile,
+            get_app_config,
+            save_app_config,
+            get_database_stats,
+            vacuum_database,
+            create_database_backup,
+            create_config_snapshot,
+            list_config_snapshots,
+            rollback_config_snapshot,
+            export_white_label_bundle,
+            import_white_label_bundle,
+            save_receipt_history,
+            list_receipt_history,
+            export_receipts_csv
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

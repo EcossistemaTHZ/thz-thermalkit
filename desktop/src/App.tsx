@@ -1,11 +1,21 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { PrinterDto, DocumentPreviewDto, PrintJobRequest } from './types';
+import {
+  PrinterDto,
+  DocumentPreviewDto,
+  PrintJobRequest,
+  StoreProfileDto,
+  AppConfigDto
+} from './types';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { ThermalViewer } from './components/ThermalViewer';
 import { ConfirmModal } from './components/ConfirmModal';
 import { ReceiptBuilder } from './components/ReceiptBuilder';
+import { WordEscPos } from './components/WordEscPos';
+import { BusinessTemplates } from './components/BusinessTemplates';
+import { OnboardingScreen } from './components/OnboardingModal';
+import { SettingsModal } from './components/SettingsModal';
 import {
   FileUp,
   FileText,
@@ -15,9 +25,7 @@ import {
   Printer,
   CheckCircle2,
   AlertCircle,
-  Clock,
-  Minus,
-  WrapText
+  Briefcase
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -26,41 +34,41 @@ export const App: React.FC = () => {
   const [selectedPrinter, setSelectedPrinter] = useState<PrinterDto | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // Configurações do SQLite: Estabelecimento e White-Label
+  const [storeProfile, setStoreProfile] = useState<StoreProfileDto | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [appConfig, setAppConfig] = useState<AppConfigDto>({
+    app_name: 'THZ ThermalKit',
+    app_subtitle: 'Direct ESC/POS Driverless Printing',
+    accent_color: '#3b82f6',
+    default_width_dots: 384,
+    default_code_page: 3,
+    show_file_tab: true,
+    show_direct_text_tab: true,
+  });
+
+  // Modal de Configurações
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
   // Configurações de Impressão ESC/POS
   const [widthDots, setWidthDots] = useState<number>(384);
   const [codePage, setCodePage] = useState<number>(3); // CP860 Português
 
-  // Modo de Trabalho: Notinha/Caixa, Documento (PDF/IMG/TXT) ou Texto Livre
-  const [activeTab, setActiveTab] = useState<'receipt' | 'file' | 'text'>('receipt');
+  // Abas: 'receipt' (Notinha/Caixa), 'word' (Word ESC/POS), 'templates' (Utilitários de Gestão) ou 'file' (PDF/IMG)
+  const [activeTab, setActiveTab] = useState<'receipt' | 'word' | 'templates' | 'file'>('receipt');
 
-  // Estado da Notinha Interativa (PDV / Caixa)
+  // Textos compilados de cada aba
   const [compiledReceiptText, setCompiledReceiptText] = useState<string>('');
+  const [wordEscPosText, setWordEscPosText] = useState<string>('');
+  const [templateText, setTemplateText] = useState<string>('');
 
   // Estados de Exibição Responsiva (Painel Lateral e Prévia Térmica)
   const [showSidebar, setShowSidebar] = useState(() => window.innerWidth >= 1350);
   const [showPreview, setShowPreview] = useState(true);
 
-  // Estado do Documento
+  // Estado do Documento Externo
   const [preview, setPreview] = useState<DocumentPreviewDto | null>(null);
   const [isLoadingDoc, setIsLoadingDoc] = useState(false);
-
-  // Estado do Modo Texto Direto
-  const [directText, setDirectText] = useState<string>(
-    '================================\n' +
-    '        THZ THERMALKIT          \n' +
-    '    IMPRESSÃO DIRETA ESC/POS    \n' +
-    '================================\n\n' +
-    'Item                    Qtd   R$\n' +
-    '--------------------------------\n' +
-    'Cafe Expresso            1  6,00\n' +
-    'Pao na Chapa             1  7,50\n' +
-    'Agua Mineral             1  4,00\n' +
-    '--------------------------------\n' +
-    'TOTAL:                  R$ 17,50\n\n' +
-    'Pagamento: PIX / Dinheiro\n\n' +
-    'Obrigado pela preferencia!\n' +
-    '================================'
-  );
 
   // Modal de Confirmação e Feedback
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -74,6 +82,52 @@ export const App: React.FC = () => {
     }, duration);
   };
 
+  // Inicialização do SQLite (Store Profile e App Config)
+  useEffect(() => {
+    const initAppData = async () => {
+      try {
+        const profile = await invoke<StoreProfileDto>('get_store_profile');
+        setStoreProfile(profile);
+
+        const config = await invoke<AppConfigDto>('get_app_config');
+        setAppConfig(config);
+        setWidthDots(config.default_width_dots || 384);
+        setCodePage(config.default_code_page || 3);
+
+        // Aplica título da janela e cor de destaque
+        document.title = config.app_name;
+        if (config.accent_color) {
+          document.documentElement.style.setProperty('--accent-usb', config.accent_color);
+        }
+      } catch (err) {
+        console.error('Falha ao carregar configurações do SQLite:', err);
+      } finally {
+        setIsLoadingProfile(false);
+      }
+    };
+
+    initAppData();
+  }, []);
+
+  // Salvar perfil do estabelecimento
+  const handleSaveStoreProfile = async (profile: StoreProfileDto) => {
+    await invoke('save_store_profile', { profile });
+    setStoreProfile(profile);
+    showToast('success', 'Dados do estabelecimento salvos com sucesso!');
+  };
+
+  // Salvar configuração White-Label
+  const handleSaveAppConfig = async (config: AppConfigDto) => {
+    await invoke('save_app_config', { config });
+    setAppConfig(config);
+    setWidthDots(config.default_width_dots);
+    setCodePage(config.default_code_page);
+    document.title = config.app_name;
+    if (config.accent_color) {
+      document.documentElement.style.setProperty('--accent-usb', config.accent_color);
+    }
+  };
+
   // Busca de Impressoras Conectadas (USB e Bluetooth)
   const refreshPrinters = useCallback(async () => {
     setIsRefreshing(true);
@@ -81,7 +135,6 @@ export const App: React.FC = () => {
       const list = await invoke<PrinterDto[]>('list_printers');
       setPrinters(list);
 
-      // Mantém a seleção anterior se ainda existir ou seleciona a primeira
       if (list.length > 0) {
         setSelectedPrinter((current) => {
           if (current) {
@@ -90,7 +143,6 @@ export const App: React.FC = () => {
             );
             if (stillExists) return stillExists;
           }
-          // Prioriza impressora Bluetooth se disponível, senão pega a primeira
           const btPrinter = list.find((p) => p.is_bluetooth);
           return btPrinter || list[0];
         });
@@ -108,7 +160,7 @@ export const App: React.FC = () => {
     refreshPrinters();
   }, [refreshPrinters]);
 
-  // Carrega e gera a prévia térmica do arquivo
+  // Carrega e gera a prévia térmica do arquivo externo
   const loadFilePreview = async (path: string, currentWidth = widthDots) => {
     setIsLoadingDoc(true);
     try {
@@ -124,7 +176,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // Seleção de Documento via FileDialog nativo (RFD)
+  // Seleção de Documento via FileDialog nativo
   const handlePickFile = async () => {
     try {
       const filePath = await invoke<string | null>('pick_document');
@@ -136,13 +188,28 @@ export const App: React.FC = () => {
     }
   };
 
-  // Quando a largura (dots) mudar, atualiza o preview se houver arquivo carregado
+  // Atualização da largura (dots)
   const handleUpdateWidth = (newWidth: number) => {
     setWidthDots(newWidth);
     if (preview && preview.file_path) {
       loadFilePreview(preview.file_path, newWidth);
     }
   };
+
+  // Enviar texto de template para o Word ESC/POS
+  const handleSendTemplateToWord = (textToSend: string) => {
+    setWordEscPosText(textToSend);
+    setActiveTab('word');
+    showToast('success', 'Template carregado no editor Word ESC/POS para personalização!');
+  };
+
+  // Texto ativo a ser impresso
+  const currentActiveText = useMemo(() => {
+    if (activeTab === 'receipt') return compiledReceiptText;
+    if (activeTab === 'word') return wordEscPosText;
+    if (activeTab === 'templates') return templateText;
+    return '';
+  }, [activeTab, compiledReceiptText, wordEscPosText, templateText]);
 
   // Disparo da Impressão Direta
   const handleExecutePrint = async () => {
@@ -153,8 +220,8 @@ export const App: React.FC = () => {
 
     setIsPrinting(true);
     try {
-      const isDirect = activeTab === 'receipt' || activeTab === 'text';
-      const textToPrint = activeTab === 'receipt' ? compiledReceiptText : directText;
+      const isDirect = activeTab !== 'file';
+      const textToPrint = currentActiveText;
 
       const req: PrintJobRequest = {
         file_path: activeTab === 'file' ? preview?.file_path || null : null,
@@ -175,108 +242,96 @@ export const App: React.FC = () => {
     }
   };
 
-  // Prepara objeto virtual de preview para modo Notinha ou Texto Direto
-  const virtualTextPreview: DocumentPreviewDto | null =
-    activeTab === 'receipt'
-      ? {
-          file_name: 'notinha_caixa.txt',
-          file_path: '',
-          file_size: compiledReceiptText.length,
-          kind: 'text',
-          text_content: compiledReceiptText,
-          preview_image_base64: null,
-          page_count: 1,
-          width_dots: widthDots,
-        }
-      : activeTab === 'text'
-      ? {
-          file_name: 'recibo_direto.txt',
-          file_path: '',
-          file_size: directText.length,
-          kind: 'text',
-          text_content: directText,
-          preview_image_base64: null,
-          page_count: 1,
-          width_dots: widthDots,
-        }
-      : preview;
+  // Objeto virtual de preview para a confirmação
+  const virtualTextPreview: DocumentPreviewDto | null = useMemo(() => {
+    if (activeTab === 'file') return preview;
+    return {
+      file_name: activeTab === 'receipt' ? 'comprovante.txt' : (activeTab === 'word' ? 'word_escpos.txt' : 'template.txt'),
+      file_path: '',
+      file_size: currentActiveText.length,
+      kind: 'text',
+      text_content: currentActiveText,
+      preview_image_base64: null,
+      page_count: 1,
+      width_dots: widthDots,
+    };
+  }, [activeTab, preview, currentActiveText, widthDots]);
 
-  const canPrint =
-    selectedPrinter !== null &&
-    ((activeTab === 'receipt' && compiledReceiptText.trim().length > 0) ||
-      (activeTab === 'file' && preview !== null) ||
-      (activeTab === 'text' && directText.trim().length > 0));
-
-  // Inserções rápidas no editor de texto
-  const maxCols = widthDots === 576 ? 48 : 32;
-
-  const overflowingLines = directText
-    .split('\n')
-    .map((line, idx) => ({ lineNum: idx + 1, len: line.length, text: line }))
-    .filter((x) => x.len > maxCols);
-
-  const autoWrapDirectText = () => {
-    const wrapped = directText
-      .split('\n')
-      .map((line) => {
-        if (line.length <= maxCols) return line;
-        const chunks: string[] = [];
-        for (let i = 0; i < line.length; i += maxCols) {
-          chunks.push(line.slice(i, i + maxCols));
-        }
-        return chunks.join('\n');
-      })
-      .join('\n');
-    setDirectText(wrapped);
-    showToast('success', `Texto formatado para o limite de ${maxCols} colunas!`);
-  };
-
-  const insertTimestamp = () => {
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR');
-    setDirectText((prev) => prev + `\nData/Hora: ${dateStr}\n`);
-  };
-
-  const insertDivider = () => {
-    setDirectText((prev) => prev + '\n--------------------------------\n');
-  };
-
+  // Avanço físico de papel (Feed)
   const [isFeeding, setIsFeeding] = useState(false);
-
-  // Avançar Bobina de Papel (Feed)
   const handleFeedPaper = async () => {
-    if (!selectedPrinter) {
-      showToast('error', 'Selecione uma impressora conectada para avançar o papel.');
-      return;
-    }
-
+    if (!selectedPrinter) return;
     setIsFeeding(true);
     try {
-      const msg = await invoke<string>('feed_paper', {
+      const res = await invoke<string>('feed_paper', {
         targetTransport: selectedPrinter.transport_type,
         targetParam: selectedPrinter.target,
         lines: 4,
       });
-      showToast('success', msg);
+      showToast('success', res);
     } catch (err) {
-      showToast('error', `Falha ao avançar papel: ${String(err)}`);
+      showToast('error', `Falha no Feed: ${String(err)}`);
     } finally {
       setIsFeeding(false);
     }
   };
 
+  const canPrint = Boolean(
+    selectedPrinter &&
+      ((activeTab === 'file' && preview) ||
+        (activeTab !== 'file' && currentActiveText.trim().length > 0))
+  );
+
+  // Splash de carregamento inicial
+  if (isLoadingProfile) {
+    return (
+      <div
+        className="app-container"
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', width: '100vw' }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+          <div className="brand-icon-box" style={{ width: '56px', height: '56px' }}>
+            <Printer size={30} color="#ffffff" />
+          </div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: 600 }}>
+            Iniciando ecossistema térmico...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Primeiro Uso: Renderiza EXCLUSIVAMENTE a tela de configuração inicial do negócio
+  if (!storeProfile?.onboarding_completed) {
+    return (
+      <div className="app-container" style={{ height: '100vh', width: '100vw', overflow: 'hidden' }}>
+        {toast && (
+          <div className={`toast-banner ${toast.type}`}>
+            {toast.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+            <span>{toast.message}</span>
+          </div>
+        )}
+        <OnboardingScreen
+          appName={appConfig.app_name}
+          onSave={handleSaveStoreProfile}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
-      {/* Toast Notification Banner */}
+      {/* Toast de Notificação */}
       {toast && (
         <div className={`toast-banner ${toast.type}`}>
-          {toast.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+          {toast.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
           <span>{toast.message}</span>
         </div>
       )}
 
-      {/* Header Superior */}
+      {/* Cabeçalho Superior com Branding White-Label e Botão de Configurações */}
       <Header
+        appConfig={appConfig}
         selectedPrinter={selectedPrinter}
         printersCount={printers.length}
         onRefresh={refreshPrinters}
@@ -287,33 +342,52 @@ export const App: React.FC = () => {
         onTogglePreview={() => setShowPreview((prev) => !prev)}
         onFeedPaper={handleFeedPaper}
         isFeeding={isFeeding}
+        onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
       {/* Conteúdo Principal Dividido (Sidebar + Área de Bobina Térmica) */}
       <div className={`app-content ${!showSidebar ? 'no-sidebar' : ''}`}>
+        {/* Painel Lateral da Impressora */}
         {showSidebar && (
           <Sidebar
             printers={printers}
             selectedPrinter={selectedPrinter}
             onSelectPrinter={setSelectedPrinter}
             widthDots={widthDots}
-            codePage={codePage}
             onUpdateWidth={handleUpdateWidth}
+            codePage={codePage}
             onUpdateCodePage={setCodePage}
           />
         )}
 
+        {/* Área Principal de Conteúdo */}
         <main className="viewer-panel glass-panel">
           {/* Barra Superior da Área de Impressão */}
           <div className="viewer-header">
-            {/* Seletor de Modo (Notinha vs Arquivo vs Texto) */}
+            {/* Seletor de Modo (Notinha vs Word ESC/POS vs Utilitários vs Arquivo) */}
             <div className="mode-switch-container">
               <button
                 className={`mode-tab-btn ${activeTab === 'receipt' ? 'active' : ''}`}
                 onClick={() => setActiveTab('receipt')}
               >
                 <Receipt size={14} />
-                <span>Gerador de Notinha (PDV)</span>
+                <span>Comprovante / Pedido</span>
+              </button>
+
+              <button
+                className={`mode-tab-btn ${activeTab === 'word' ? 'active' : ''}`}
+                onClick={() => setActiveTab('word')}
+              >
+                <Type size={14} />
+                <span>Word para ESC/POS</span>
+              </button>
+
+              <button
+                className={`mode-tab-btn ${activeTab === 'templates' ? 'active' : ''}`}
+                onClick={() => setActiveTab('templates')}
+              >
+                <Briefcase size={14} />
+                <span>Utilitários & Gestão</span>
               </button>
 
               <button
@@ -323,17 +397,9 @@ export const App: React.FC = () => {
                 <FileText size={14} />
                 <span>Arquivo (PDF / Img)</span>
               </button>
-
-              <button
-                className={`mode-tab-btn ${activeTab === 'text' ? 'active' : ''}`}
-                onClick={() => setActiveTab('text')}
-              >
-                <Type size={14} />
-                <span>Texto Livre</span>
-              </button>
             </div>
 
-            {/* Ações do Modo Arquivo */}
+            {/* Ações contextuais de cada aba */}
             {activeTab === 'file' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {preview && (
@@ -359,169 +425,78 @@ export const App: React.FC = () => {
                 </button>
               </div>
             )}
-
-            {/* Ações do Modo Texto Livre */}
-            {activeTab === 'text' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <button
-                  className="btn-secondary"
-                  style={{
-                    padding: '6px 10px',
-                    fontSize: '0.75rem',
-                    color: overflowingLines.length > 0 ? 'var(--accent-warning)' : 'inherit',
-                  }}
-                  onClick={autoWrapDirectText}
-                  title={`Ajustar linhas longas para caberem em ${maxCols} colunas`}
-                >
-                  <WrapText size={13} />
-                  <span>Ajustar ({maxCols} col)</span>
-                </button>
-
-                <button
-                  className="btn-secondary"
-                  style={{ padding: '6px 10px', fontSize: '0.75rem' }}
-                  onClick={insertTimestamp}
-                  title="Inserir data e hora atual"
-                >
-                  <Clock size={13} />
-                  <span>Data/Hora</span>
-                </button>
-
-                <button
-                  className="btn-secondary"
-                  style={{ padding: '6px 10px', fontSize: '0.75rem' }}
-                  onClick={insertDivider}
-                  title="Inserir linha divisória"
-                >
-                  <Minus size={13} />
-                  <span>Linha</span>
-                </button>
-
-                <button
-                  className="btn-secondary"
-                  style={{ padding: '6px 10px', fontSize: '0.75rem', color: 'var(--accent-danger)' }}
-                  onClick={() => setDirectText('')}
-                  title="Limpar texto"
-                >
-                  <Trash2 size={13} />
-                  <span>Limpar</span>
-                </button>
-              </div>
-            )}
           </div>
 
-          {/* Área Central: Visualizador da Bobina Térmica ou Editor */}
-          {activeTab === 'receipt' ? (
-            <div style={{ display: 'grid', gridTemplateColumns: showPreview ? '1fr 315px' : '1fr', gap: '16px', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-              {/* Painel Interativo de Notinha (Caixa / PDV) */}
-              <ReceiptBuilder
-                widthDots={widthDots}
-                onReceiptChange={setCompiledReceiptText}
-              />
-
-              {/* Prévia em tempo real na Bobina */}
-              {showPreview && (
-                <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                  <ThermalViewer preview={virtualTextPreview} widthDots={widthDots} />
-                </div>
-              )}
-            </div>
-          ) : activeTab === 'file' ? (
-            preview ? (
-              <ThermalViewer preview={preview} widthDots={widthDots} />
-            ) : (
-              <div
-                className="roll-stage-container"
-                style={{ alignItems: 'center', justifyContent: 'center' }}
-              >
-                <div
-                  className="dropzone-container"
-                  style={{ width: '420px', padding: '40px 24px' }}
-                  onClick={handlePickFile}
-                >
-                  <div className="dropzone-icon-circle">
-                    <FileUp size={24} />
-                  </div>
-                  <div className="dropzone-title">Selecione um documento</div>
-                  <div className="dropzone-desc">
-                    Suporte nativo a PDFs, Imagens (PNG/JPG) e arquivos de texto (.txt).
-                    Clique para navegar ou escolha um arquivo.
-                  </div>
-                  <button
-                    className="btn-secondary"
-                    style={{ marginTop: '12px' }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handlePickFile();
-                    }}
-                  >
-                    Escolher do Computador
-                  </button>
-                </div>
-              </div>
-            )
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: showPreview ? '1fr 315px' : '1fr', gap: '16px', flex: 1, minHeight: 0 }}>
-              {/* Editor de Texto com Contador de Colunas */}
-              <div className="direct-text-wrapper">
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  <span>Editor ESC/POS • Fonte A (12×24)</span>
-                  {overflowingLines.length > 0 ? (
-                    <span style={{ color: 'var(--accent-warning)', fontWeight: 700 }}>
-                      ⚠️ {overflowingLines.length} linha(s) excedem {maxCols} colunas!
-                    </span>
-                  ) : (
-                    <span style={{ color: 'var(--accent-usb)', fontWeight: 700 }}>
-                      ✓ 100% alinhado ({maxCols} colunas)
-                    </span>
-                  )}
-                </div>
-
-                <textarea
-                  className="direct-textarea"
-                  value={directText}
-                  onChange={(e) => setDirectText(e.target.value)}
-                  placeholder="Digite aqui o texto ou recibo para imprimir na bobina térmica..."
-                  spellCheck={false}
+          {/* Área Central: Renderização de cada Aba */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {activeTab === 'receipt' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: showPreview ? '1fr 315px' : '1fr', gap: '16px', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                <ReceiptBuilder
+                  widthDots={widthDots}
+                  storeProfile={storeProfile}
+                  onReceiptChange={setCompiledReceiptText}
+                  onOpenSettings={() => setIsSettingsOpen(true)}
                 />
-
-                {overflowingLines.length > 0 && (
-                  <div
-                    style={{
-                      padding: '8px 12px',
-                      background: 'rgba(245, 158, 11, 0.1)',
-                      border: '1px solid rgba(245, 158, 11, 0.3)',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: '0.75rem',
-                      color: '#fde68a',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '8px',
-                    }}
-                  >
-                    <span>
-                      ⚠️ Linha {overflowingLines[0].lineNum} possui {overflowingLines[0].len} caracteres (máx: {maxCols}). Na impressora física, o excesso cairá para a linha de baixo!
-                    </span>
-                    <button
-                      className="btn-secondary"
-                      style={{ padding: '4px 8px', fontSize: '0.7rem', flexShrink: 0 }}
-                      onClick={autoWrapDirectText}
-                    >
-                      Ajustar automaticamente
-                    </button>
+                {showPreview && (
+                  <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                    <ThermalViewer preview={virtualTextPreview} widthDots={widthDots} />
                   </div>
                 )}
               </div>
-
-              {/* Prévia em tempo real na Bobina */}
-              {showPreview && (
-                <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                  <ThermalViewer preview={virtualTextPreview} widthDots={widthDots} />
+            ) : activeTab === 'word' ? (
+              <WordEscPos
+                widthDots={widthDots}
+                storeProfile={storeProfile}
+                onTextChange={setWordEscPosText}
+                showPreview={showPreview}
+              />
+            ) : activeTab === 'templates' ? (
+              <BusinessTemplates
+                widthDots={widthDots}
+                storeProfile={storeProfile}
+                onSelectForPrint={(compiled) => {
+                  setTemplateText(compiled);
+                  setIsConfirmOpen(true);
+                }}
+                onSendToWord={handleSendTemplateToWord}
+                showPreview={showPreview}
+              />
+            ) : (
+              preview ? (
+                <ThermalViewer preview={preview} widthDots={widthDots} />
+              ) : (
+                <div
+                  className="roll-stage-container"
+                  style={{ alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <div
+                    className="dropzone-container"
+                    style={{ width: '420px', padding: '40px 24px' }}
+                    onClick={handlePickFile}
+                  >
+                    <div className="dropzone-icon-circle">
+                      <FileUp size={24} />
+                    </div>
+                    <div className="dropzone-title">Selecione um documento</div>
+                    <div className="dropzone-desc">
+                      Suporte nativo a PDFs, Imagens (PNG/JPG) e arquivos de texto (.txt).
+                      Clique para navegar ou escolha um arquivo.
+                    </div>
+                    <button
+                      className="btn-secondary"
+                      style={{ marginTop: '12px' }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePickFile();
+                      }}
+                    >
+                      Escolher do Computador
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
+              )
+            )}
+          </div>
 
           {/* Rodapé de Ação e Disparo */}
           <div className="viewer-action-footer">
@@ -552,6 +527,17 @@ export const App: React.FC = () => {
           </div>
         </main>
       </div>
+
+      {/* Modal de Configurações, White-Label e Backups */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        storeProfile={storeProfile || { name: 'MEU ESTABELECIMENTO', doc: '00.000.000/0001-00', onboarding_completed: false }}
+        appConfig={appConfig}
+        onSaveStore={handleSaveStoreProfile}
+        onSaveAppConfig={handleSaveAppConfig}
+        onNotification={showToast}
+      />
 
       {/* Modal de Confirmação Pré-impressão */}
       {selectedPrinter && (

@@ -1,8 +1,20 @@
 import React from 'react';
-import { PrinterDto } from '../types';
-import { Printer, Bluetooth, Usb, RefreshCw, Sliders, Eye, EyeOff, ChevronsDown } from 'lucide-react';
+import { PrinterDto, AppConfigDto } from '../types';
+import {
+  Printer,
+  Bluetooth,
+  Usb,
+  RefreshCw,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Eye,
+  EyeOff,
+  ChevronsDown,
+  Settings
+} from 'lucide-react';
 
 interface HeaderProps {
+  appConfig: AppConfigDto;
   selectedPrinter: PrinterDto | null;
   printersCount: number;
   onRefresh: () => void;
@@ -13,9 +25,11 @@ interface HeaderProps {
   onTogglePreview: () => void;
   onFeedPaper: () => void;
   isFeeding: boolean;
+  onOpenSettings: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
+  appConfig,
   selectedPrinter,
   printersCount,
   onRefresh,
@@ -26,6 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
   onTogglePreview,
   onFeedPaper,
   isFeeding,
+  onOpenSettings,
 }) => {
   const isConnected = !!selectedPrinter;
   const isBt = selectedPrinter?.is_bluetooth;
@@ -33,24 +48,45 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="app-header">
       <div className="brand-section">
-        <div className="brand-icon-box">
+        <div
+          className="brand-icon-box"
+          style={{
+            background: `linear-gradient(135deg, ${appConfig.accent_color}, #1d4ed8)`,
+            boxShadow: `0 8px 16px ${appConfig.accent_color}40`,
+          }}
+        >
           <Printer size={22} color="#ffffff" />
         </div>
         <div>
-          <h1 className="brand-title">THZ ThermalKit</h1>
-          <p className="brand-subtitle">Direct ESC/POS Driverless Printing</p>
+          <h1 className="brand-title">{appConfig.app_name}</h1>
+          <p className="brand-subtitle">{appConfig.app_subtitle}</p>
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {/* Botão de Configurações e White-Label */}
+        <button
+          className="btn-secondary"
+          onClick={onOpenSettings}
+          title="Configurações do Estabelecimento, White-Label, Backups e Compactação"
+          style={{ borderColor: 'rgba(59, 130, 246, 0.4)' }}
+        >
+          <Settings size={15} color="var(--accent-usb)" />
+          <span>Configurações</span>
+        </button>
+
         {/* Toggle Painel Lateral */}
         <button
           className={`btn-secondary ${showSidebar ? 'active-toggle' : ''}`}
           onClick={onToggleSidebar}
           title={showSidebar ? 'Ocultar painel lateral da impressora' : 'Exibir painel lateral da impressora'}
         >
-          <Sliders size={14} color={showSidebar ? 'var(--accent-bt)' : 'inherit'} />
-          <span>{showSidebar ? 'Ocultar Lateral' : 'Lateral'}</span>
+          {showSidebar ? (
+            <PanelLeftClose size={15} color="var(--accent-bt)" />
+          ) : (
+            <PanelLeftOpen size={15} />
+          )}
+          <span>{showSidebar ? 'Ocultar Lateral' : 'Ver Lateral'}</span>
         </button>
 
         {/* Toggle Prévia da Bobina */}
@@ -68,16 +104,16 @@ export const Header: React.FC<HeaderProps> = ({
           className="btn-secondary"
           onClick={onFeedPaper}
           disabled={!selectedPrinter || isFeeding}
-          title={selectedPrinter ? "Avançar bobina na impressora física (Feed)" : "Conecte uma impressora para avançar papel"}
+          title={selectedPrinter ? 'Avançar bobina na impressora física (Feed)' : 'Conecte uma impressora para avançar papel'}
           style={{
             borderColor: selectedPrinter ? 'rgba(56, 189, 248, 0.35)' : undefined,
           }}
         >
           <ChevronsDown
             size={15}
-            color={selectedPrinter ? "var(--accent-bt)" : "var(--text-muted)"}
+            color={selectedPrinter ? 'var(--accent-bt)' : 'var(--text-muted)'}
           />
-          <span>{isFeeding ? "Avançando..." : "Avançar Papel"}</span>
+          <span>{isFeeding ? 'Avançando...' : 'Avançar'}</span>
         </button>
 
         <button
