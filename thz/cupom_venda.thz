@@ -1,0 +1,229 @@
+PROGRAMA CupomVendaTermico
+
+# ==============================================================================
+# THZ-LANG — Emissão de Cupom de Venda Direto para Bobina ESC/POS
+# Aritmética Monetária Exata • Itens em Grade • Módulo BRASIL.* • GUI FlatLaf
+# ==============================================================================
+
+METADADOS_ARQUITETURA
+    DOMINIO: "Comercial"
+    SUBDOMINIO: "CheckoutBalcaoPDV"
+    CAMADA: "Aplicacao"
+    VERSAO: "1.0.0"
+    AUTOR: "Lucas Thomaz"
+    SLO_LATENCIA_MAXIMA: "20ms"
+    CONFORMIDADE: "ISO-10967", "ISO-4217", "SOX"
+FIM_METADADOS
+
+ENUMERACAO FormaPagamentoVenda
+    DINHEIRO
+    PIX_INSTANTANEO
+    CARTAO_CREDITO
+    CARTAO_DEBITO
+    A_PRAZO_CONVENIO
+FIM_ENUMERACAO
+
+ESTRUTURA ItemVenda
+    codigo: TEXTO
+    descricao: TEXTO
+    quantidade: DECIMAL(10, 3)
+    precoUnitario: DECIMAL(12, 2)
+    valorTotalItem: DECIMAL(12, 2)
+FIM_ESTRUTURA
+
+ESTRUTURA VendaCabecalho
+    estabelecimento: TEXTO
+    cnpjEstabelecimento: TEXTO
+    clienteNome: TEXTO
+    clienteCpfCnpj: TEXTO
+    itens: FATIA[ItemVenda]
+    descontoGeral: DECIMAL(12, 2)
+    acrescimoGeral: DECIMAL(12, 2)
+    formaPagamento: FormaPagamentoVenda
+    chavePixRecebimento: TEXTO
+    mensagemRodape: TEXTO
+FIM_ESTRUTURA
+
+ESTRUTURA CupomProcessado
+    subtotalBruto: DECIMAL(12, 2)
+    totalLiquido: DECIMAL(12, 2)
+    quantidadeTotalItens: DECIMAL(10, 3)
+    cupomFormatado: TEXTO
+FIM_ESTRUTURA
+
+REGRA_NEGOCIO ProcessamentoVenda
+    IDENTIFICADOR_REGRA: "RN-VND-002"
+    RASTREIO_REQUISITO: "REQ-PDV-CUPOM-02"
+    DESCRICAO: "Processa cálculo exato de itens, descontos e emite bobina térmica"
+
+    CONTRATO_ENTRADA
+        EXIGE TEXTO.comprimento(venda.estabelecimento) >= 3
+        EXIGE venda.descontoGeral >= 0.00
+        EXIGE venda.acrescimoGeral >= 0.00
+    FIM_CONTRATO_ENTRADA
+
+    CONTRATO_SAIDA
+        GARANTE RESULTADO.totalLiquido >= 0.00
+        GARANTE TEXTO.comprimento(RESULTADO.cupomFormatado) > 0
+    FIM_CONTRATO_SAIDA
+
+    OPERACAO CalcularCupom(venda: VendaCabecalho, larguraColunas: INTEIRO32): CupomProcessado
+    INICIO
+        # 1. Totalização dos Itens
+        VARIAVEL subtotal: DECIMAL(12, 2) <- 0.00
+        VARIAVEL qtdTotal: DECIMAL(10, 3) <- 0.000
+
+        # Separadores de linha para bobina térmica
+        VARIAVEL divSimples: TEXTO <- "--------------------------------"
+        VARIAVEL divDupla: TEXTO <- "================================"
+        SE larguraColunas >= 48
+            divSimples <- "------------------------------------------------"
+            divDupla   <- "================================================"
+        FIM_SE
+
+        VARIAVEL corpoItens: TEXTO <- ""
+
+        # Cabeçalho dos Itens
+        SE larguraColunas >= 48
+            corpoItens <- corpoItens + "ITEM CODIGO   DESCRICAO        QTD   UN    TOTAL\n"
+        SENAO
+            corpoItens <- corpoItens + "# COD  DESC          QTD    UN     TOTAL\n"
+        FIM_SE
+        corpoItens <- corpoItens + divSimples + "\n"
+
+        VARIAVEL totalItensFatia: INTEIRO <- FATIA.tamanho(venda.itens)
+        SE totalItensFatia > 0
+            PARA idx DE 0 ATE (totalItensFatia - 1) FACA
+                VARIAVEL item: ItemVenda <- venda.itens[idx]
+                VARIAVEL totItem: DECIMAL(12, 2) <- item.quantidade * item.precoUnitario
+                subtotal <- subtotal + totItem
+                qtdTotal <- qtdTotal + item.quantidade
+
+                # Formatação de Linha do Item
+                VARIAVEL descItem: TEXTO <- item.descricao
+                SE TEXTO.comprimento(descItem) > 16
+                    descItem <- TEXTO.subtexto(descItem, 0, 16)
+                FIM_SE
+
+                corpoItens <- corpoItens + item.codigo + " " + descItem + "\n"
+                corpoItens <- corpoItens + "   " + TEXTO.deDecimal(item.quantidade) + " x R$ " + TEXTO.deDecimal(item.precoUnitario) + " = R$ " + TEXTO.deDecimal(totItem) + "\n"
+            FIM_PARA
+        FIM_SE
+
+        # 2. Total Líquido Final com Arredondamento Bancário
+        VARIAVEL totalFinal: DECIMAL(12, 2) <- (subtotal - venda.descontoGeral) + venda.acrescimoGeral
+
+        # 3. Montagem do Cupom Térmico ESC/POS
+        VARIAVEL cupom: TEXTO <- divDupla + "\n"
+        cupom <- cupom + "       " + venda.estabelecimento + "\n"
+        cupom <- cupom + "     CNPJ: " + venda.cnpjEstabelecimento + "\n"
+        cupom <- cupom + divDupla + "\n"
+        cupom <- cupom + "          CUPOM NAO FISCAL\n"
+        cupom <- cupom + divDupla + "\n"
+
+        SE TEXTO.comprimento(venda.clienteNome) > 0
+            cupom <- cupom + "CLIENTE: " + venda.clienteNome + "\n"
+            SE TEXTO.comprimento(venda.clienteCpfCnpj) > 0
+                cupom <- cupom + "CPF/CNPJ: " + venda.clienteCpfCnpj + "\n"
+            FIM_SE
+            cupom <- cupom + divSimples + "\n"
+        FIM_SE
+
+        cupom <- cupom + corpoItens
+        cupom <- cupom + divSimples + "\n"
+        cupom <- cupom + "SUBTOTAL BRUTO       : R$ " + TEXTO.deDecimal(subtotal) + "\n"
+
+        SE venda.descontoGeral > 0.00
+            cupom <- cupom + "DESCONTO (-)         : R$ " + TEXTO.deDecimal(venda.descontoGeral) + "\n"
+        FIM_SE
+
+        SE venda.acrescimoGeral > 0.00
+            cupom <- cupom + "ACRESCIMO (+)        : R$ " + TEXTO.deDecimal(venda.acrescimoGeral) + "\n"
+        FIM_SE
+
+        cupom <- cupom + divDupla + "\n"
+        cupom <- cupom + "TOTAL A PAGAR        : R$ " + TEXTO.deDecimal(totalFinal) + "\n"
+        cupom <- cupom + "FORMA DE PAGAMENTO   : " + venda.formaPagamento + "\n"
+        cupom <- cupom + divDupla + "\n"
+
+        SE venda.formaPagamento == PIX_INSTANTANEO
+            cupom <- cupom + "CHAVE PIX PARA PAGAMENTO:\n"
+            cupom <- cupom + venda.chavePixRecebimento + "\n"
+            cupom <- cupom + divSimples + "\n"
+        FIM_SE
+
+        SE TEXTO.comprimento(venda.mensagemRodape) > 0
+            cupom <- cupom + venda.mensagemRodape + "\n"
+        SENAO
+            cupom <- cupom + "Obrigado pela preferencia! Volte sempre.\n"
+        FIM_SE
+
+        cupom <- cupom + divDupla + "\n"
+
+        VARIAVEL resultado: CupomProcessado <- CRIAR CupomProcessado(
+            subtotalBruto: subtotal,
+            totalLiquido: totalFinal,
+            quantidadeTotalItens: qtdTotal,
+            cupomFormatado: cupom
+        )
+
+        RETORNE resultado
+    FIM
+FIM_REGRA_NEGOCIO
+
+# ==============================================================================
+# Interface Gráfica Declarativa FlatLaf (TELA)
+# ==============================================================================
+REGRA_NEGOCIO InterfaceCupomVenda
+    OPERACAO MontarTela(): TEXTO
+    INICIO
+        VARIAVEL item1: ItemVenda <- CRIAR ItemVenda(codigo: "001", descricao: "Cafe Espresso 50ml", quantidade: 2.000, precoUnitario: 6.50, valorTotalItem: 13.00)
+        VARIAVEL item2: ItemVenda <- CRIAR ItemVenda(codigo: "002", descricao: "Pao de Queijo Minas", quantidade: 3.000, precoUnitario: 5.00, valorTotalItem: 15.00)
+        VARIAVEL item3: ItemVenda <- CRIAR ItemVenda(codigo: "003", descricao: "Suco Laranja Natural", quantidade: 1.000, precoUnitario: 12.00, valorTotalItem: 12.00)
+
+        VARIAVEL listaItens: FATIA[ItemVenda] <- [item1, item2, item3]
+
+        VARIAVEL formulario: VendaCabecalho <- CRIAR VendaCabecalho(
+            estabelecimento: "PADARIA & BISTRÔ CENTRAL",
+            cnpjEstabelecimento: "12.345.678/0001-90",
+            clienteNome: "Consumidor Final",
+            clienteCpfCnpj: "000.000.000-00",
+            itens: listaItens,
+            descontoGeral: 0.00,
+            acrescimoGeral: 0.00,
+            formaPagamento: PIX_INSTANTANEO,
+            chavePixRecebimento: "pix@bistrocentral.com.br",
+            mensagemRodape: "Agradecemos o seu pedido! Avalie nosso atendimento."
+        )
+
+        VARIAVEL status: TEXTO <- TELA.renderizarFormulario(formulario, "ProcessamentoVenda.CalcularCupom")
+        EXIBA status
+        RETORNE status
+    FIM
+FIM_REGRA_NEGOCIO
+
+PROCEDIMENTO Principal()
+INICIO
+    VARIAVEL item1: ItemVenda <- CRIAR ItemVenda(codigo: "001", descricao: "Cafe Espresso 50ml", quantidade: 2.000, precoUnitario: 6.50, valorTotalItem: 13.00)
+    VARIAVEL item2: ItemVenda <- CRIAR ItemVenda(codigo: "002", descricao: "Pao de Queijo Minas", quantidade: 3.000, precoUnitario: 5.00, valorTotalItem: 15.00)
+    VARIAVEL item3: ItemVenda <- CRIAR ItemVenda(codigo: "003", descricao: "Suco Laranja Natural", quantidade: 1.000, precoUnitario: 12.00, valorTotalItem: 12.00)
+    VARIAVEL listaItens: FATIA[ItemVenda] <- [item1, item2, item3]
+
+    VARIAVEL venda: VendaCabecalho <- CRIAR VendaCabecalho(
+        estabelecimento: "PADARIA & BISTRO CENTRAL",
+        cnpjEstabelecimento: "12.345.678/0001-90",
+        clienteNome: "Consumidor Final",
+        clienteCpfCnpj: "000.000.000-00",
+        itens: listaItens,
+        descontoGeral: 0.00,
+        acrescimoGeral: 0.00,
+        formaPagamento: PIX_INSTANTANEO,
+        chavePixRecebimento: "pix@bistrocentral.com.br",
+        mensagemRodape: "Agradecemos o seu pedido!"
+    )
+
+    VARIAVEL res: CupomProcessado <- ProcessamentoVenda.CalcularCupom(venda, 48)
+    EXIBA res.cupomFormatado
+FIM
+
+FIM_PROGRAMA

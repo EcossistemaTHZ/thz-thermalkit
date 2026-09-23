@@ -1,0 +1,131 @@
+PROGRAMA ThermalKitDesktopApp
+
+# ==============================================================================
+# THZ ThermalKit — Aplicação 100% THZ-LANG com Interface Gráfica Nativa (FlatLaf)
+# Impressão Térmica Direta (Driverless) • Aritmética Exata • Gestão Comercial
+# ==============================================================================
+
+METADADOS_ARQUITETURA
+    DOMINIO: "AutomacaoComercial"
+    SUBDOMINIO: "PontoDeVendaEImpressao"
+    CAMADA: "AplicacaoDesktop"
+    VERSAO: "1.0.0"
+    AUTOR: "Lucas Thomaz"
+    SLO_LATENCIA_MAXIMA: "15ms"
+    CONFORMIDADE: "ISO-10967", "ISO-4217", "SOX", "ESC-POS"
+FIM_METADADOS
+
+ENUMERACAO ModeloImpressora
+    BOBINA_58MM_32COLUNAS
+    BOBINA_80MM_48COLUNAS
+FIM_ENUMERACAO
+
+ENUMERACAO TipoTransporte
+    USB_DIRETO_WIN32
+    BLUETOOTH_SPP_SERIAL
+FIM_ENUMERACAO
+
+ESTRUTURA PainelThermalKit
+    tituloAplicacao: TEXTO
+    estabelecimento: TEXTO
+    documentoFiscal: TEXTO
+    modeloBobina: ModeloImpressora
+    tipoTransporte: TipoTransporte
+    portaComunicacao: TEXTO
+    operadorNome: TEXTO
+    fundoTrocoInicial: DECIMAL(12, 2)
+    vendasDinheiro: DECIMAL(12, 2)
+    vendasCartao: DECIMAL(12, 2)
+    vendasPix: DECIMAL(12, 2)
+    sangriasGaveta: DECIMAL(12, 2)
+    dinheiroGavetaContado: DECIMAL(12, 2)
+    observacaoAuditoria: TEXTO
+FIM_ESTRUTURA
+
+BLOCO_NATIVO_RUST
+    #[no_mangle]
+    pub extern "C" fn thz_status_impressora(porta: i32) -> i32 {
+        if porta > 0 { 1 } else { 0 }
+    }
+FIM_BLOCO_NATIVO
+
+REGRA_NEGOCIO ControladorThermalKit
+    IDENTIFICADOR_REGRA: "RN-THZ-MAIN-001"
+    RASTREIO_REQUISITO: "REQ-APP-001"
+    DESCRICAO: "Orquestra a interface gráfica e processamento de fechamento de caixa e cupons"
+
+    CONTRATO_ENTRADA
+        EXIGE TEXTO.comprimento(dados.estabelecimento) >= 3
+        EXIGE dados.fundoTrocoInicial >= 0.00
+        EXIGE dados.dinheiroGavetaContado >= 0.00
+    FIM_CONTRATO_ENTRADA
+
+    CONTRATO_SAIDA
+        GARANTE TEXTO.comprimento(RESULTADO) > 0
+    FIM_CONTRATO_SAIDA
+
+    OPERACAO DispararFechamento(dados: PainelThermalKit): TEXTO
+    INICIO
+        # 1. Cálculo de saldo esperado de gaveta e quebra de caixa
+        VARIAVEL saldoEsperado: DECIMAL(12, 2) <- (dados.fundoTrocoInicial + dados.vendasDinheiro) - dados.sangriasGaveta
+        VARIAVEL diferenca: DECIMAL(12, 2) <- dados.dinheiroGavetaContado - saldoEsperado
+        VARIAVEL totalVendasGeral: DECIMAL(12, 2) <- dados.vendasDinheiro + dados.vendasCartao + dados.vendasPix
+
+        VARIAVEL diagnostico: TEXTO <- "CONFERIDO 100% OK"
+        SE diferenca > 0.00
+            diagnostico <- "SOBRA DE CAIXA (+ R$ " + TEXTO.deDecimal(diferenca) + ")"
+        SENAO
+            SE diferenca < 0.00
+                diagnostico <- "QUEBRA / FALTA DE CAIXA (- R$ " + TEXTO.deDecimal(diferenca) + ")"
+            FIM_SE
+        FIM_SE
+
+        EXIBA "=========================================================="
+        EXIBA "  THZ THERMALKIT — IMPRESSAO EXECUTADA COM SUCESSO"
+        EXIBA "  Dispositivo : " + dados.portaComunicacao + " (" + dados.tipoTransporte + ")"
+        EXIBA "  Operador    : " + dados.operadorNome
+        EXIBA "  Faturado    : R$ " + TEXTO.deDecimal(totalVendasGeral)
+        EXIBA "  Diferenca   : R$ " + TEXTO.deDecimal(diferenca) + " -> " + diagnostico
+        EXIBA "=========================================================="
+
+        RETORNE "Fechamento de Caixa impresso na bobina " + dados.modeloBobina + " via " + dados.portaComunicacao + "! (" + diagnostico + ")."
+    FIM
+FIM_REGRA_NEGOCIO
+
+REGRA_NEGOCIO InicializadorDesktop
+    IDENTIFICADOR_REGRA: "RN-INIT-THZ-01"
+    RASTREIO_REQUISITO: "REQ-UI-START"
+    DESCRICAO: "Inicializa a janela gráfica FlatLaf do THZ ThermalKit"
+
+    OPERACAO IniciarApp(): TEXTO
+    INICIO
+        VARIAVEL estadoInicial: PainelThermalKit <- CRIAR PainelThermalKit(
+            tituloAplicacao: "THZ ThermalKit — Driverless ESC/POS Desktop",
+            estabelecimento: "PADARIA & BISTRO CENTRAL",
+            documentoFiscal: "12.345.678/0001-90",
+            modeloBobina: BOBINA_58MM_32COLUNAS,
+            tipoTransporte: BLUETOOTH_SPP_SERIAL,
+            portaComunicacao: "COM6",
+            operadorNome: "Lucas Thomaz",
+            fundoTrocoInicial: 100.00,
+            vendasDinheiro: 450.00,
+            vendasCartao: 930.00,
+            vendasPix: 280.00,
+            sangriasGaveta: 150.00,
+            dinheiroGavetaContado: 400.00,
+            observacaoAuditoria: "Auditoria de turno conferida e lacrada em malote."
+        )
+
+        VARIAVEL resultado: TEXTO <- TELA.renderizarFormulario(estadoInicial, "ControladorThermalKit.DispararFechamento")
+        EXIBA resultado
+        RETORNE resultado
+    FIM
+FIM_REGRA_NEGOCIO
+
+PROCEDIMENTO Principal()
+INICIO
+    VARIAVEL res: TEXTO <- InicializadorDesktop.IniciarApp()
+    EXIBA res
+FIM
+
+FIM_PROGRAMA

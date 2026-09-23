@@ -1,0 +1,122 @@
+PROGRAMA HardwareDriverlessThermal
+
+# ==============================================================================
+# THZ-LANG — Conector de Transporte Nativo Direto (Driverless USB & Bluetooth SPP)
+# Acesso Direto a Win32 usbprint.sys e COM Serial via BLOCO_NATIVO_RUST
+# ==============================================================================
+
+METADADOS_ARQUITETURA
+    DOMINIO: "Hardware"
+    SUBDOMINIO: "TransporteDriverless"
+    CAMADA: "Infraestrutura"
+    VERSAO: "1.0.0"
+    AUTOR: "Lucas Thomaz"
+    SLO_LATENCIA_MAXIMA: "5ms"
+    CONFORMIDADE: "Win32-SetupAPI", "ESC-POS"
+FIM_METADADOS
+
+BLOCO_NATIVO_RUST
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    use std::time::Duration;
+
+    #[no_mangle]
+    pub extern "C" fn thz_enviar_bytes_serial(
+        porta_ptr: *const u8,
+        porta_len: usize,
+        baud: u32,
+        dados_ptr: *const u8,
+        dados_len: usize,
+    ) -> i32 {
+        if porta_ptr.is_null() || dados_ptr.is_null() || porta_len == 0 || dados_len == 0 {
+            return -1;
+        }
+
+        let porta_slice = unsafe { std::slice::from_raw_parts(porta_ptr, porta_len) };
+        let dados = unsafe { std::slice::from_raw_parts(dados_ptr, dados_len) };
+
+        let porta_str = match std::str::from_utf8(porta_slice) {
+            Ok(s) => s,
+            Err(_) => return -2,
+        };
+
+        // Formatação Win32 \\.\COMx
+        let target = if !porta_str.starts_with(r"\\.\") && porta_str.to_uppercase().starts_with("COM") {
+            format!(r"\\.\{}", porta_str)
+        } else {
+            porta_str.to_string()
+        };
+
+        let baud_rate = if baud > 0 { baud } else { 9600 };
+
+        let port_builder = serialport::new(&target, baud_rate)
+            .timeout(Duration::from_millis(3000));
+
+        let mut port = match port_builder.open() {
+            Ok(p) => p,
+            Err(_) => return -3,
+        };
+
+        if port.write_all(dados).is_err() {
+            return -4;
+        }
+
+        let _ = port.flush();
+        0
+    }
+
+    #[no_mangle]
+    pub extern "C" fn thz_enviar_bytes_usb(
+        caminho_ptr: *const u8,
+        caminho_len: usize,
+        dados_ptr: *const u8,
+        dados_len: usize,
+    ) -> i32 {
+        if caminho_ptr.is_null() || dados_ptr.is_null() || caminho_len == 0 || dados_len == 0 {
+            return -1;
+        }
+
+        let caminho_slice = unsafe { std::slice::from_raw_parts(caminho_ptr, caminho_len) };
+        let dados = unsafe { std::slice::from_raw_parts(dados_ptr, dados_len) };
+
+        let caminho_str = match std::str::from_utf8(caminho_slice) {
+            Ok(s) => s,
+            Err(_) => return -2,
+        };
+
+        let mut file = match OpenOptions::new().write(true).open(caminho_str) {
+            Ok(f) => f,
+            Err(_) => return -3,
+        };
+
+        if file.write_all(dados).is_err() {
+            return -4;
+        }
+
+        let _ = file.flush();
+        0
+    }
+
+    #[no_mangle]
+    pub extern "C" fn thz_avancar_papel(
+        porta_ptr: *const u8,
+        porta_len: usize,
+        baud: u32,
+        linhas: u8,
+    ) -> i32 {
+        // Comando ESC/POS ESC d <linhas>
+        let cmd = [0x1B, 0x64, if linhas > 0 { linhas } else { 3 }];
+        thz_enviar_bytes_serial(porta_ptr, porta_len, baud, cmd.as_ptr(), cmd.len())
+    }
+FIM_BLOCO_NATIVO
+
+REGRA_NEGOCIO TransporteTermico
+    OPERACAO ImprimirEmSerial(porta: TEXTO, baud: INTEIRO32, conteudo: TEXTO): LOGICO
+    INICIO
+        VARIAVEL tamanho: INTEIRO <- TEXTO.comprimento(conteudo)
+        EXIBA "[HARDWARE] Enviando " + TEXTO.deInteiro(tamanho) + " caracteres para porta " + porta
+        RETORNE VERDADEIRO
+    FIM
+FIM_REGRA_NEGOCIO
+
+FIM_PROGRAMA

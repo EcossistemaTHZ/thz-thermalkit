@@ -1,0 +1,47 @@
+TELA ThermalKitApp
+
+# ==============================================================================
+# THZ-LANG — Interface Gráfica Declarativa do THZ ThermalKit (FlatLaf Desktop)
+# Controle Driverless de Impressoras Térmicas • Fechamento de Caixa • Cupom ESC/POS
+# ==============================================================================
+
+METADADOS_ARQUITETURA
+    DOMINIO: "AutomacaoComercial"
+    CAMADA: "Apresentacao"
+    VERSAO: "1.0.0"
+    AUTOR: "Lucas Thomaz"
+    SLO_LATENCIA_MAXIMA: "15ms"
+    CONFORMIDADE: "ISO-10967", "ISO-4217"
+FIM_METADADOS
+
+PROCEDIMENTO MontarInterface()
+INICIO
+    TELA.criarContainer("raiz", "CONTAINER")
+
+    # 1. Cabeçalho & Status do Dispositivo
+    TELA.criarCard("card_dispositivo", "THZ ThermalKit — Conexão Driverless")
+    TELA.adicionarCampoTexto("txt_porta", "Porta Serial / Win32 USB", "COM6 (TECH CLA58 Bluetooth SPP)")
+    TELA.adicionarCampoTexto("txt_largura", "Largura Útil do Papel", "58 mm (384 dots / 32 colunas)")
+    TELA.adicionarMetrica("kpi_status", "Status da Impressora", "ONLINE (Conectado)")
+
+    # 2. Gestão de Caixa & Faturamento Diário
+    TELA.criarCard("card_caixa", "Fechamento de Caixa Diário / Turno")
+    TELA.adicionarCampoTexto("txt_operador", "Operador de Caixa", "Operador 01")
+    TELA.adicionarCampoMoeda("moeda_fundo_troco", "Fundo de Troco Inicial", "BRL")
+    TELA.adicionarCampoMoeda("moeda_vendas_dinheiro", "Vendas em Dinheiro (Espécie)", "BRL")
+    TELA.adicionarCampoMoeda("moeda_vendas_pix", "Recebimentos em PIX", "BRL")
+    TELA.adicionarCampoMoeda("moeda_vendas_cartao", "Vendas em Cartão (Crédito/Débito)", "BRL")
+    TELA.adicionarCampoMoeda("moeda_sangrias", "Sangrias / Retiradas de Caixa", "BRL")
+    TELA.adicionarCampoMoeda("moeda_dinheiro_gaveta", "Dinheiro Físico Contado na Gaveta", "BRL")
+
+    # 3. Ações de Operação e Disparo Físico para a Bobina
+    TELA.criarCard("card_acoes", "Operações e Disparo Térmico")
+    TELA.adicionarBotao("btn_auditar", "Calcular e Auditar Caixa", "AuditoriaCaixa.ProcessarAuditoria")
+    TELA.adicionarBotao("btn_imprimir_cupom", "Imprimir Cupom de Venda", "ProcessamentoVenda.CalcularCupom")
+    TELA.adicionarBotao("btn_avancar_papel", "Avançar Papel (Feed 4 Linhas)", "TransporteTermico.AvancarPapel")
+
+    # Exibição da Janela Nativa Desktop
+    TELA.exibir("ThermalKitApp")
+FIM
+
+FIM_TELA

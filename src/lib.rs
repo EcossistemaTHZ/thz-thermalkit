@@ -544,6 +544,33 @@ pub fn probe_payload() -> Vec<u8> {
     out
 }
 
+pub fn test_pattern(width: u32) -> Vec<u8> {
+    let h = 72;
+    let mut ruler = GrayImage::from_pixel(width, h, Luma([255]));
+    for x in 0..width {
+        ruler.put_pixel(x, 0, Luma([0]));
+        ruler.put_pixel(x, h - 1, Luma([0]));
+        if x % 8 == 0 {
+            for y in 0..if x % 64 == 0 { 36 } else { 18 } {
+                ruler.put_pixel(x, y, Luma([0]));
+            }
+        }
+    }
+    for y in 0..h {
+        ruler.put_pixel(0, y, Luma([0]));
+        ruler.put_pixel(width - 1, y, Luma([0]));
+    }
+    let mut out = vec![0x1b, b'@'];
+    out.extend_from_slice(
+        format!("THZ THERMALKIT - LARGURA: {width} dots\nCada traco pequeno = 8 dots\n").as_bytes(),
+    );
+    if let Ok(raster) = gs_v0(&ruler) {
+        out.extend(raster);
+    }
+    out.extend_from_slice(b"\n\n");
+    out
+}
+
 pub fn write_payload(transport: &ActiveTransport, bytes: &[u8]) -> io::Result<()> {
     match transport {
         ActiveTransport::Usb(path) => {
@@ -561,3 +588,5 @@ pub fn write_payload(transport: &ActiveTransport, bytes: &[u8]) -> io::Result<()
         }
     }
 }
+
+pub mod thz_engine;

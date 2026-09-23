@@ -1,0 +1,199 @@
+PROGRAMA FechamentoCaixaTermico
+
+# ==============================================================================
+# THZ-LANG — Sistema de Fechamento de Caixa Diário / Turno para Impressão Térmica
+# Aritmética Monetária Exata (ISO-10967) • Design by Contract • Interface FlatLaf
+# ==============================================================================
+
+METADADOS_ARQUITETURA
+    DOMINIO: "Comercial"
+    SUBDOMINIO: "GestaoFinanceiraPDV"
+    CAMADA: "Aplicacao"
+    VERSAO: "1.0.0"
+    AUTOR: "Lucas Thomaz"
+    SLO_LATENCIA_MAXIMA: "15ms"
+    CONFORMIDADE: "ISO-10967", "ISO-4217", "SOX"
+FIM_METADADOS
+
+ENUMERACAO TurnoTrabalho
+    MANHA
+    TARDE
+    NOITE
+    INTEGRAL
+FIM_ENUMERACAO
+
+ESTRUTURA FechamentoCaixaDados
+    estabelecimento: TEXTO
+    documentoFiscal: TEXTO
+    operador: TEXTO
+    turno: TurnoTrabalho
+    dataHora: TEXTO
+    trocoInicial: DECIMAL(12, 2)
+    vendasDinheiro: DECIMAL(12, 2)
+    vendasCartaoCredito: DECIMAL(12, 2)
+    vendasCartaoDebito: DECIMAL(12, 2)
+    vendasPix: DECIMAL(12, 2)
+    sangriasRetiradas: DECIMAL(12, 2)
+    dinheiroGavetaContado: DECIMAL(12, 2)
+    observacao: TEXTO
+FIM_ESTRUTURA
+
+ESTRUTURA ResultadoConferencia
+    saldoEsperadoGaveta: DECIMAL(12, 2)
+    totalEntradasTurno: DECIMAL(12, 2)
+    diferencaQuebra: DECIMAL(12, 2)
+    statusConferencia: TEXTO
+    cupomFormatado: TEXTO
+FIM_ESTRUTURA
+
+REGRA_NEGOCIO AuditoriaCaixa
+    IDENTIFICADOR_REGRA: "RN-CX-001"
+    RASTREIO_REQUISITO: "REQ-PDV-FIN-01"
+    DESCRICAO: "Audita saldo de gaveta e calcula quebra de caixa com rigor financeiro"
+
+    CONTRATO_ENTRADA
+        EXIGE dados.trocoInicial >= 0.00
+        EXIGE dados.vendasDinheiro >= 0.00
+        EXIGE dados.vendasCartaoCredito >= 0.00
+        EXIGE dados.vendasCartaoDebito >= 0.00
+        EXIGE dados.vendasPix >= 0.00
+        EXIGE dados.sangriasRetiradas >= 0.00
+        EXIGE dados.dinheiroGavetaContado >= 0.00
+        EXIGE TEXTO.comprimento(dados.operador) >= 2
+    FIM_CONTRATO_ENTRADA
+
+    CONTRATO_SAIDA
+        GARANTE TEXTO.comprimento(RESULTADO.cupomFormatado) > 0
+    FIM_CONTRATO_SAIDA
+
+    OPERACAO ProcessarAuditoria(dados: FechamentoCaixaDados, larguraColunas: INTEIRO32): ResultadoConferencia
+    INICIO
+        # 1. Cálculo do Saldo Físico Esperado em Dinheiro na Gaveta
+        # Saldo Esperado = Fundo de Troco Inicial + Vendas em Espécie - Sangrias/Retiradas
+        VARIAVEL saldoEsperado: DECIMAL(12, 2) <- (dados.trocoInicial + dados.vendasDinheiro) - dados.sangriasRetiradas
+
+        # 2. Total Geral de Entradas do Turno (Todos os Meios de Pagamento)
+        VARIAVEL totalGeral: DECIMAL(12, 2) <- dados.vendasDinheiro + dados.vendasCartaoCredito + dados.vendasCartaoDebito + dados.vendasPix
+
+        # 3. Diferença de Caixa (Contado - Esperado)
+        # > 0: Sobra de Caixa | < 0: Falta de Caixa | == 0: Caixa 100% Exato
+        VARIAVEL dif: DECIMAL(12, 2) <- dados.dinheiroGavetaContado - saldoEsperado
+        VARIAVEL statusTexto: TEXTO <- "EXATO (SEM DIFERENCA)"
+
+        SE dif > 0.00
+            statusTexto <- "SOBRA DE CAIXA (+)"
+        SENAO
+            SE dif < 0.00
+                statusTexto <- "FALTA / QUEBRA DE CAIXA (-)"
+            FIM_SE
+        FIM_SE
+
+        # 4. Formatação do Cupom Térmico (32 colunas para 58mm ou 48 colunas para 80mm)
+        VARIAVEL divSimples: TEXTO <- "--------------------------------"
+        VARIAVEL divDupla: TEXTO <- "================================"
+        SE larguraColunas >= 48
+            divSimples <- "------------------------------------------------"
+            divDupla   <- "================================================"
+        FIM_SE
+
+        VARIAVEL cupom: TEXTO <- divDupla + "\n"
+        cupom <- cupom + "       " + dados.estabelecimento + "\n"
+        cupom <- cupom + "     CNPJ/CPF: " + dados.documentoFiscal + "\n"
+        cupom <- cupom + divDupla + "\n"
+        cupom <- cupom + "         FECHAMENTO DE CAIXA\n"
+        cupom <- cupom + "           TURNO: " + dados.turno + "\n"
+        cupom <- cupom + divDupla + "\n"
+        cupom <- cupom + "DATA/HORA: " + dados.dataHora + "\n"
+        cupom <- cupom + "OPERADOR : " + dados.operador + "\n"
+        cupom <- cupom + divSimples + "\n"
+        cupom <- cupom + "       RESUMO DAS ENTRADAS\n"
+        cupom <- cupom + "FUNDO DE TROCO INICIAL: R$ " + TEXTO.deDecimal(dados.trocoInicial) + "\n"
+        cupom <- cupom + "VENDAS EM DINHEIRO    : R$ " + TEXTO.deDecimal(dados.vendasDinheiro) + "\n"
+        cupom <- cupom + "CARTAO DE CREDITO     : R$ " + TEXTO.deDecimal(dados.vendasCartaoCredito) + "\n"
+        cupom <- cupom + "CARTAO DE DEBITO      : R$ " + TEXTO.deDecimal(dados.vendasCartaoDebito) + "\n"
+        cupom <- cupom + "PAGAMENTOS PIX        : R$ " + TEXTO.deDecimal(dados.vendasPix) + "\n"
+        cupom <- cupom + divSimples + "\n"
+        cupom <- cupom + "TOTAL GERAL FATURADO  : R$ " + TEXTO.deDecimal(totalGeral) + "\n"
+        cupom <- cupom + "SANGRIAS / RETIRADAS  : R$ " + TEXTO.deDecimal(dados.sangriasRetiradas) + "\n"
+        cupom <- cupom + divDupla + "\n"
+        cupom <- cupom + "      CONFERENCIA DA GAVETA\n"
+        cupom <- cupom + "DINHEIRO ESPERADO     : R$ " + TEXTO.deDecimal(saldoEsperado) + "\n"
+        cupom <- cupom + "DINHEIRO CONTADO      : R$ " + TEXTO.deDecimal(dados.dinheiroGavetaContado) + "\n"
+        cupom <- cupom + "DIFERENCA DE CAIXA    : R$ " + TEXTO.deDecimal(dif) + "\n"
+        cupom <- cupom + "SITUACAO: " + statusTexto + "\n"
+        cupom <- cupom + divDupla + "\n"
+
+        SE TEXTO.comprimento(dados.observacao) > 0
+            cupom <- cupom + "OBS: " + dados.observacao + "\n"
+            cupom <- cupom + divSimples + "\n"
+        FIM_SE
+
+        cupom <- cupom + "\n\n__________________________________\n"
+        cupom <- cupom + "    ASSINATURA DO OPERADOR\n\n"
+        cupom <- cupom + "__________________________________\n"
+        cupom <- cupom + "     ASSINATURA DO GERENTE\n"
+        cupom <- cupom + divDupla + "\n"
+
+        VARIAVEL res: ResultadoConferencia <- CRIAR ResultadoConferencia(
+            saldoEsperadoGaveta: saldoEsperado,
+            totalEntradasTurno: totalGeral,
+            diferencaQuebra: dif,
+            statusConferencia: statusTexto,
+            cupomFormatado: cupom
+        )
+
+        RETORNE res
+    FIM
+FIM_REGRA_NEGOCIO
+
+# ==============================================================================
+# Interface Gráfica Declarativa FlatLaf (TELA)
+# ==============================================================================
+REGRA_NEGOCIO InterfaceFechamentoCaixa
+    OPERACAO MontarTela(): TEXTO
+    INICIO
+        VARIAVEL dadosMock: FechamentoCaixaDados <- CRIAR FechamentoCaixaDados(
+            estabelecimento: "MEU ESTABELECIMENTO",
+            documentoFiscal: "00.000.000/0001-00",
+            operador: "Operador 01",
+            turno: TARDE,
+            dataHora: "2026-09-22 23:35",
+            trocoInicial: 100.00,
+            vendasDinheiro: 450.00,
+            vendasCartaoCredito: 620.00,
+            vendasCartaoDebito: 310.00,
+            vendasPix: 280.00,
+            sangriasRetiradas: 200.00,
+            dinheiroGavetaContado: 350.00,
+            observacao: "Conferido e lacrado em malote"
+        )
+
+        VARIAVEL resultado: TEXTO <- TELA.renderizarFormulario(dadosMock, "AuditoriaCaixa.ProcessarAuditoria")
+        EXIBA resultado
+        RETORNE resultado
+    FIM
+FIM_REGRA_NEGOCIO
+
+PROCEDIMENTO Principal()
+INICIO
+    VARIAVEL dadosMock: FechamentoCaixaDados <- CRIAR FechamentoCaixaDados(
+        estabelecimento: "MEU ESTABELECIMENTO",
+        documentoFiscal: "00.000.000/0001-00",
+        operador: "Operador 01",
+        turno: TARDE,
+        dataHora: "2026-09-22 23:35",
+        trocoInicial: 100.00,
+        vendasDinheiro: 450.00,
+        vendasCartaoCredito: 620.00,
+        vendasCartaoDebito: 310.00,
+        vendasPix: 280.00,
+        sangriasRetiradas: 200.00,
+        dinheiroGavetaContado: 350.00,
+        observacao: "Conferido e lacrado em malote"
+    )
+
+    VARIAVEL res: ResultadoConferencia <- AuditoriaCaixa.ProcessarAuditoria(dadosMock, 48)
+    EXIBA res.cupomFormatado
+FIM
+
+FIM_PROGRAMA

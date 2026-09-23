@@ -23,6 +23,10 @@ use std::{
     ptr,
     time::Duration,
 };
+use thermal_core::thz_engine::{
+    FechamentoCaixaDados, ItemVendaThz, ResultadoAuditoriaCaixa, ResultadoCupomVenda,
+    StatusConferencia, ThzEngine, VendaThz,
+};
 
 // ============================================================================
 // Estruturas e Constantes da Windows SetupAPI
@@ -534,6 +538,16 @@ fn cp860(s: &str) -> Vec<u8> {
 // Estado da Aplicação Desktop (App State)
 // ============================================================================
 
+/// Abas de navegação da aplicação desktop
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ActiveTab {
+    ThzFechamento,
+    ThzCupomVenda,
+    WordEscPos,
+    Documentos,
+    Diagnostico,
+}
+
 /// Representação em memória do documento carregado para impressão.
 enum Document {
     None,
@@ -551,10 +565,39 @@ struct App {
     texture: Option<egui::TextureHandle>,
     message: String,
     confirm: bool,
+
+    // Abas e Motor THZ Nativo
+    active_tab: ActiveTab,
+    fechamento_dados: FechamentoCaixaDados,
+    fechamento_resultado: Option<ResultadoAuditoriaCaixa>,
+    troco_inicial_reais: f64,
+    vendas_dinheiro_reais: f64,
+    vendas_cartao_credito_reais: f64,
+    vendas_cartao_debito_reais: f64,
+    vendas_pix_reais: f64,
+    sangrias_reais: f64,
+    dinheiro_gaveta_reais: f64,
+
+    venda_dados: VendaThz,
+    venda_resultado: Option<ResultadoCupomVenda>,
+    desconto_reais: f64,
+    acrescimo_reais: f64,
+    novo_item_codigo: String,
+    novo_item_desc: String,
+    novo_item_qtd: f64,
+    novo_item_preco: f64,
+
+    word_texto: String,
+    word_negrito: bool,
+    word_alinhamento: usize, // 0 = esquerda, 1 = centro, 2 = direita
+    word_duplo: bool,
 }
 
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let default_fechamento = FechamentoCaixaDados::default();
+        let default_venda = VendaThz::default();
+
         let mut a = Self {
             profile_path: PathBuf::from("profiles/tech-cla58.json"),
             profile: None,
@@ -562,11 +605,38 @@ impl App {
             file: None,
             doc: Document::None,
             texture: None,
-            message: "Abra um arquivo para começar.".into(),
+            message: "THZ ThermalKit inicializado com sucesso (Runtime Nativo Rust).".into(),
             confirm: false,
+
+            active_tab: ActiveTab::ThzFechamento,
+            troco_inicial_reais: default_fechamento.troco_inicial_centavos as f64 / 100.0,
+            vendas_dinheiro_reais: default_fechamento.vendas_dinheiro_centavos as f64 / 100.0,
+            vendas_cartao_credito_reais: default_fechamento.vendas_cartao_credito_centavos as f64 / 100.0,
+            vendas_cartao_debito_reais: default_fechamento.vendas_cartao_debito_centavos as f64 / 100.0,
+            vendas_pix_reais: default_fechamento.vendas_pix_centavos as f64 / 100.0,
+            sangrias_reais: default_fechamento.sangrias_retiradas_centavos as f64 / 100.0,
+            dinheiro_gaveta_reais: default_fechamento.dinheiro_gaveta_contado_centavos as f64 / 100.0,
+            fechamento_dados: default_fechamento,
+            fechamento_resultado: None,
+
+            desconto_reais: default_venda.desconto_geral_centavos as f64 / 100.0,
+            acrescimo_reais: default_venda.acrescimo_geral_centavos as f64 / 100.0,
+            venda_dados: default_venda,
+            venda_resultado: None,
+            novo_item_codigo: "004".into(),
+            novo_item_desc: "Agua Mineral 500ml".into(),
+            novo_item_qtd: 1.0,
+            novo_item_preco: 4.50,
+
+            word_texto: "THZ THERMALKIT - WORD ESC/POS\n\nEste e um documento de teste livre formatado diretamente para bobina termica.\n\n[X] Checar bobina 58mm\n[X] Verificar conexao Bluetooth SPP\n[X] Emitir comprovante de fechamento\n".into(),
+            word_negrito: false,
+            word_alinhamento: 0,
+            word_duplo: false,
         };
         a.load_profile();
         a.refresh_device();
+        a.recalcular_fechamento();
+        a.recalcular_venda();
 
         // Configura tema escuro estilizado da aplicação
         let mut visuals = egui::Visuals::dark();
@@ -771,6 +841,88 @@ impl App {
             }
         }
     }
+
+    fn recalcular_fechamento(&mut self) {
+        self.fechamento_dados.troco_inicial_centavos = (self.troco_inicial_reais * 100.0).round() as i64;
+        self.fechamento_dados.vendas_dinheiro_centavos = (self.vendas_dinheiro_reais * 100.0).round() as i64;
+        self.fechamento_dados.vendas_cartao_credito_centavos = (self.vendas_cartao_credito_reais * 100.0).round() as i64;
+        self.fechamento_dados.vendas_cartao_debito_centavos = (self.vendas_cartao_debito_reais * 100.0).round() as i64;
+        self.fechamento_dados.vendas_pix_centavos = (self.vendas_pix_reais * 100.0).round() as i64;
+        self.fechamento_dados.sangrias_retiradas_centavos = (self.sangrias_reais * 100.0).round() as i64;
+        self.fechamento_dados.dinheiro_gaveta_contado_centavos = (self.dinheiro_gaveta_reais * 100.0).round() as i64;
+
+        let colunas = if self.profile.as_ref().map(|p| p.printable_width_dots).unwrap_or(384) >= 576 { 48 } else { 32 };
+        match ThzEngine::processar_fechamento_caixa(&self.fechamento_dados, colunas) {
+            Ok(res) => self.fechamento_resultado = Some(res),
+            Err(e) => self.message = e,
+        }
+    }
+
+    fn recalcular_venda(&mut self) {
+        self.venda_dados.desconto_geral_centavos = (self.desconto_reais * 100.0).round() as i64;
+        self.venda_dados.acrescimo_geral_centavos = (self.acrescimo_reais * 100.0).round() as i64;
+        let colunas = if self.profile.as_ref().map(|p| p.printable_width_dots).unwrap_or(384) >= 576 { 48 } else { 32 };
+        match ThzEngine::processar_cupom_venda(&self.venda_dados, colunas) {
+            Ok(res) => self.venda_resultado = Some(res),
+            Err(e) => self.message = e,
+        }
+    }
+
+    fn print_cp860_text(&mut self, text: &str) {
+        let code_page = self.profile.as_ref().map(|p| p.code_page).unwrap_or(3);
+        let mut bytes = vec![0x1b, b'@']; // Reset de sessão ESC @
+        bytes.extend_from_slice(&[0x1b, b't', code_page]); // ESC t <codepage>
+        bytes.extend(cp860(text));
+        bytes.extend_from_slice(&[0x1b, b'd', 4]); // Feed 4 linhas
+        self.send_direct_bytes(&bytes);
+    }
+
+    fn send_direct_bytes(&mut self, bytes: &[u8]) {
+        let p = match &self.profile {
+            Some(p) => p.clone(),
+            None => {
+                self.message = "Carregue um perfil primeiro.".into();
+                return;
+            }
+        };
+        let discovered = match discover(&p) {
+            Ok(d) => d,
+            Err(e) => {
+                self.message = e;
+                return;
+            }
+        };
+
+        match &discovered.transport {
+            ActiveTransport::Usb(path) => {
+                match OpenOptions::new().write(true).open(path).and_then(|mut f| {
+                    f.write_all(bytes)?;
+                    f.flush()
+                }) {
+                    Ok(_) => self.message = "Impresso com sucesso via USB Win32!".into(),
+                    Err(e) => self.message = format!("Falha de envio USB: {e}"),
+                }
+            }
+            ActiveTransport::Com { port, baud, is_bluetooth } => {
+                let label = if *is_bluetooth { "Bluetooth SPP" } else { "Porta Serial COM" };
+                match serialport::new(port, *baud)
+                    .timeout(Duration::from_secs(10))
+                    .open()
+                    .map_err(|e| std::io::Error::other(e.to_string()))
+                    .and_then(|mut s| {
+                        s.write_all(bytes)?;
+                        s.flush()
+                    }) {
+                    Ok(_) => {
+                        self.message = format!("Impresso com sucesso via {label} ({port})!");
+                    }
+                    Err(e) => {
+                        self.message = format!("Falha ao comunicar via {label} ({port}): {e}");
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -787,27 +939,37 @@ impl eframe::App for App {
         let connected = self.device.starts_with("Conectada");
         let is_bluetooth = self.device.contains("Bluetooth");
 
-        // Cores temáticas: Azul céu para Bluetooth, Verde Esmeralda para USB, Vermelho para desconectado
         let accent = if is_bluetooth {
             egui::Color32::from_rgb(56, 189, 248)
         } else {
             egui::Color32::from_rgb(51, 211, 153)
         };
 
-        // Barra Superior: Título e Status de Conexão
+        // --------------------------------------------------------------------
+        // Barra Superior: Título, Motor Nativo Rust e Navegação por Abas
+        // --------------------------------------------------------------------
         egui::TopBottomPanel::top("top")
-            .exact_height(76.0)
+            .exact_height(105.0)
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.add_space(8.0);
                     ui.vertical(|ui| {
-                        ui.add_space(10.0);
-                        ui.heading(egui::RichText::new("THZ ThermalKit").size(27.0).strong());
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            ui.heading(egui::RichText::new("THZ ThermalKit").size(24.0).strong());
+                            ui.label(
+                                egui::RichText::new("🦀 100% Nativo (thz-runtime-rs Rust • Zero JVM)")
+                                    .small()
+                                    .color(accent),
+                            );
+                        });
                         ui.label(
-                            egui::RichText::new("Impressão térmica direta (USB & Bluetooth SPP)")
+                            egui::RichText::new("Comunicação direta Win32 USB & Bluetooth SPP sem spooler")
+                                .small()
                                 .color(egui::Color32::GRAY),
                         );
                     });
+
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.add_space(12.0);
                         let indicator_color = if connected {
@@ -829,33 +991,51 @@ impl eframe::App for App {
                                 .color(indicator_color)
                                 .strong(),
                             );
-                            let (rect, _) = ui
-                                .allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
-                            ui.painter()
-                                .circle_filled(rect.center(), 4.0, indicator_color);
+                            let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
+                            ui.painter().circle_filled(rect.center(), 4.0, indicator_color);
                         });
                     });
                 });
+
+                ui.separator();
+
+                // Barra de Seleção de Abas
+                ui.horizontal(|ui| {
+                    ui.add_space(8.0);
+                    if ui.selectable_label(self.active_tab == ActiveTab::ThzFechamento, "⚡ Fechamento de Caixa THZ").clicked() {
+                        self.active_tab = ActiveTab::ThzFechamento;
+                        self.recalcular_fechamento();
+                    }
+                    if ui.selectable_label(self.active_tab == ActiveTab::ThzCupomVenda, "🧾 Cupom de Venda THZ").clicked() {
+                        self.active_tab = ActiveTab::ThzCupomVenda;
+                        self.recalcular_venda();
+                    }
+                    if ui.selectable_label(self.active_tab == ActiveTab::WordEscPos, "📝 Word ESC/POS").clicked() {
+                        self.active_tab = ActiveTab::WordEscPos;
+                    }
+                    if ui.selectable_label(self.active_tab == ActiveTab::Documentos, "🖨️ Documentos & Imagens").clicked() {
+                        self.active_tab = ActiveTab::Documentos;
+                    }
+                    if ui.selectable_label(self.active_tab == ActiveTab::Diagnostico, "⚙️ Diagnóstico & Bobina").clicked() {
+                        self.active_tab = ActiveTab::Diagnostico;
+                    }
+                });
             });
 
-        // Painel Esquerdo: Controles, Perfil, Arquivo e Ação de Imprimir
+        // --------------------------------------------------------------------
+        // Painel Esquerdo: Status do Dispositivo e Perfil
+        // --------------------------------------------------------------------
         egui::SidePanel::left("controls")
-            .min_width(290.0)
-            .max_width(320.0)
+            .min_width(280.0)
+            .max_width(300.0)
             .show(ctx, |ui| {
-                ui.add_space(12.0);
-                ui.heading("Preparar impressão");
-                ui.label(egui::RichText::new("Perfil e documento").color(egui::Color32::GRAY));
                 ui.add_space(8.0);
+                ui.heading("Dispositivo");
+                ui.label(egui::RichText::new("Perfil e Hardware").color(egui::Color32::GRAY));
+                ui.add_space(6.0);
 
-                // Seção Impressora e Perfil
                 ui.group(|ui| {
-                    ui.set_min_height(112.0);
-                    ui.label(
-                        egui::RichText::new("IMPRESSORA")
-                            .small()
-                            .color(egui::Color32::GRAY),
-                    );
+                    ui.label(egui::RichText::new("PERFIL ATIVO").small().color(egui::Color32::GRAY));
                     ui.label(
                         self.profile
                             .as_ref()
@@ -869,141 +1049,414 @@ impl eframe::App for App {
                     }));
                     ui.horizontal(|ui| {
                         if ui.button("Atualizar").clicked() {
-                            self.refresh_device()
+                            self.refresh_device();
                         }
-                        if ui.button("Trocar perfil").clicked() {
-                            if let Some(p) = FileDialog::new()
-                                .add_filter("Perfil", &["json"])
-                                .pick_file()
-                            {
+                        if ui.button("Trocar").clicked() {
+                            if let Some(p) = FileDialog::new().add_filter("Perfil", &["json"]).pick_file() {
                                 self.profile_path = p;
                                 self.load_profile();
-                                self.refresh_device()
+                                self.refresh_device();
                             }
                         }
                     });
                 });
 
-                ui.add_space(10.0);
+                ui.add_space(8.0);
 
-                // Seção Documento
                 ui.group(|ui| {
-                    ui.set_min_height(112.0);
-                    ui.label(
-                        egui::RichText::new("DOCUMENTO")
-                            .small()
-                            .color(egui::Color32::GRAY),
-                    );
-                    if ui
-                        .add_sized(
-                            [250.0, 42.0],
-                            egui::Button::new("Abrir PDF, imagem ou texto"),
-                        )
-                        .clicked()
-                    {
-                        if let Some(p) = FileDialog::new()
-                            .add_filter("Documentos", &["txt", "png", "jpg", "jpeg", "pdf"])
-                            .pick_file()
-                        {
-                            self.open(ctx, p)
-                        }
-                    }
-                    if let Some(f) = &self.file {
-                        ui.add_space(4.0);
-                        ui.label(
-                            egui::RichText::new(
-                                f.file_name().unwrap_or_default().to_string_lossy(),
-                            )
-                            .strong(),
-                        );
-                    } else {
-                        ui.label(
-                            egui::RichText::new("Nenhum arquivo selecionado")
-                                .color(egui::Color32::GRAY),
-                        );
-                    }
+                    ui.label(egui::RichText::new("PARÂMETROS DA BOBINA").small().color(egui::Color32::GRAY));
+                    let dots = self.profile.as_ref().map(|p| p.printable_width_dots).unwrap_or(384);
+                    let baud = self.profile.as_ref().map(|p| p.baud).unwrap_or(9600);
+                    let cp = self.profile.as_ref().map(|p| p.code_page).unwrap_or(3);
+                    ui.label(format!("Largura útil: {} dots ({} col)", dots, if dots >= 576 { 48 } else { 32 }));
+                    ui.label(format!("Baud rate: {} bps", baud));
+                    ui.label(format!("Code Page: {} (CP860 pt-BR)", cp));
                 });
 
-                ui.add_space(10.0);
-
-                // Botão de Disparo da Impressão
-                let ready =
-                    !matches!(self.doc, Document::None) && self.profile.is_some() && connected;
-                let print_btn_text = egui::RichText::new("Imprimir")
-                    .size(18.0)
-                    .color(if ready {
-                        egui::Color32::from_rgb(12, 17, 23)
-                    } else {
-                        egui::Color32::GRAY
-                    })
-                    .strong();
-                if ui
-                    .add_enabled(
-                        ready,
-                        egui::Button::new(print_btn_text)
-                            .fill(accent)
-                            .min_size(egui::vec2(250.0, 46.0)),
-                    )
-                    .clicked()
-                {
-                    self.confirm = true
-                }
-                ui.add_space(4.0);
-                ui.label(egui::RichText::new(&self.message).color(egui::Color32::LIGHT_GRAY));
+                ui.add_space(8.0);
+                ui.group(|ui| {
+                    ui.label(egui::RichText::new("STATUS").small().color(egui::Color32::GRAY));
+                    ui.label(egui::RichText::new(&self.message).small().color(egui::Color32::LIGHT_GRAY));
+                });
 
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                     ui.label(
-                        egui::RichText::new(
-                            "USB & Bluetooth SPP direto • ESC/POS • 384 dots • CP860",
-                        )
-                        .small()
-                        .color(egui::Color32::DARK_GRAY),
+                        egui::RichText::new("Acesso Win32 Direto • Sem Spooler • ESC/POS")
+                            .small()
+                            .color(egui::Color32::DARK_GRAY),
                     );
                 });
             });
 
-        // Painel Central: Prévia Visual do Documento em 58 mm
+        // --------------------------------------------------------------------
+        // Painel Central: Conteúdo da Aba Selecionada
+        // --------------------------------------------------------------------
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.add_space(12.0);
-            ui.horizontal(|ui| {
-                ui.heading("Prévia");
-                ui.label(egui::RichText::new("58 mm").color(accent).strong());
-            });
-            ui.separator();
-            ui.add_space(8.0);
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| match &self.doc {
-                    Document::Text(t) => {
-                        ui.label(egui::RichText::new("TEXTO").small().color(egui::Color32::GRAY));
-                        ui.add_space(6.0);
-                        ui.monospace(t);
-                    }
-                    Document::Rasters(pages) => {
-                        ui.label(
-                            egui::RichText::new(format!("{} página(s)", pages.len()))
-                                .color(egui::Color32::GRAY),
-                        );
-                        ui.add_space(6.0);
-                        if let Some(tex) = &self.texture {
-                            let size = tex.size_vec2();
-                            let scale = (ui.available_width() / size.x).min(1.45);
-                            ui.image((tex.id(), size * scale));
-                        }
-                    }
-                    Document::None => {
-                        ui.add_space(80.0);
-                        ui.vertical_centered(|ui| {
-                            ui.heading("Seu documento aparece aqui");
-                            ui.label(
-                                egui::RichText::new(
-                                    "Abra um PDF, imagem ou arquivo de texto para gerar a prévia térmica.",
-                                )
-                                .color(egui::Color32::GRAY),
-                            );
+            match self.active_tab {
+                ActiveTab::ThzFechamento => {
+                    ui.horizontal(|ui| {
+                        ui.heading("⚡ Fechamento de Caixa — Regra THZ-LANG");
+                        ui.label(egui::RichText::new("AuditoriaCaixa.ProcessarAuditoria").color(accent).strong());
+                    });
+                    ui.separator();
+
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui.columns(2, |cols| {
+                            // Coluna 1: Formulário interativo de entradas
+                            cols[0].group(|ui| {
+                                ui.heading("Parâmetros do Turno");
+                                ui.horizontal(|ui| {
+                                    ui.label("Operador:");
+                                    ui.text_edit_singleline(&mut self.fechamento_dados.operador);
+                                    ui.label("Turno:");
+                                    ui.text_edit_singleline(&mut self.fechamento_dados.turno);
+                                });
+
+                                ui.add_space(6.0);
+                                ui.label(egui::RichText::new("ENTRADAS E VALORES MONETÁRIOS (R$)").strong().small());
+
+                                let mut changed = false;
+                                ui.horizontal(|ui| {
+                                    ui.label("Fundo Troco Inicial : R$");
+                                    changed |= ui.add(egui::DragValue::new(&mut self.troco_inicial_reais).speed(5.0).prefix(" ")).changed();
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.label("Vendas em Dinheiro    : R$");
+                                    changed |= ui.add(egui::DragValue::new(&mut self.vendas_dinheiro_reais).speed(10.0).prefix(" ")).changed();
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.label("Cartão de Crédito     : R$");
+                                    changed |= ui.add(egui::DragValue::new(&mut self.vendas_cartao_credito_reais).speed(10.0).prefix(" ")).changed();
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.label("Cartão de Débito      : R$");
+                                    changed |= ui.add(egui::DragValue::new(&mut self.vendas_cartao_debito_reais).speed(10.0).prefix(" ")).changed();
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.label("Recebimentos PIX      : R$");
+                                    changed |= ui.add(egui::DragValue::new(&mut self.vendas_pix_reais).speed(10.0).prefix(" ")).changed();
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.label("Sangrias / Retiradas  : R$");
+                                    changed |= ui.add(egui::DragValue::new(&mut self.sangrias_reais).speed(10.0).prefix(" ")).changed();
+                                });
+
+                                ui.separator();
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new("Dinheiro Contado Gaveta: R$").strong());
+                                    changed |= ui.add(egui::DragValue::new(&mut self.dinheiro_gaveta_reais).speed(10.0).prefix(" ")).changed();
+                                });
+
+                                if changed {
+                                    self.recalcular_fechamento();
+                                }
+
+                                ui.add_space(6.0);
+                                ui.label("Observação da Auditoria:");
+                                ui.text_edit_singleline(&mut self.fechamento_dados.observacao);
+
+                                ui.add_space(10.0);
+                                ui.horizontal(|ui| {
+                                    if ui.button("⚡ Recalcular Regra").clicked() {
+                                        self.recalcular_fechamento();
+                                    }
+
+                                    let print_enabled = connected && self.fechamento_resultado.is_some();
+                                    if ui.add_enabled(print_enabled, egui::Button::new("🖨️ Imprimir na Bobina").fill(accent)).clicked() {
+                                        if let Some(res) = &self.fechamento_resultado {
+                                            let text = res.cupom_formatado.clone();
+                                            self.print_cp860_text(&text);
+                                        }
+                                    }
+                                });
+                            });
+
+                            // Coluna 2: Prévia Térmica do Cupom de Fechamento
+                            cols[1].group(|ui| {
+                                ui.heading("Prévia Térmica (ESC/POS CP860)");
+                                if let Some(res) = &self.fechamento_resultado {
+                                    let status_color = match res.status {
+                                        StatusConferencia::Exato => egui::Color32::from_rgb(51, 211, 153),
+                                        StatusConferencia::Sobra(_) => egui::Color32::from_rgb(56, 189, 248),
+                                        StatusConferencia::Falta(_) => egui::Color32::from_rgb(244, 114, 94),
+                                    };
+                                    ui.label(egui::RichText::new(format!("Saldo Esperado: R$ {}", ThzEngine::formatar_moeda(res.saldo_esperado_centavos))).strong());
+                                    ui.label(egui::RichText::new(format!("Diferença: R$ {}", ThzEngine::formatar_moeda(res.diferenca_centavos))).color(status_color).strong());
+                                    ui.separator();
+                                    ui.monospace(&res.cupom_formatado);
+                                } else {
+                                    ui.label("Clique em 'Recalcular Regra' para gerar a prévia.");
+                                }
+                            });
                         });
-                    }
-                });
+                    });
+                }
+
+                ActiveTab::ThzCupomVenda => {
+                    ui.horizontal(|ui| {
+                        ui.heading("🧾 Emissão de Cupom de Venda — Regra THZ-LANG");
+                        ui.label(egui::RichText::new("ProcessamentoVenda.CalcularCupom").color(accent).strong());
+                    });
+                    ui.separator();
+
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui.columns(2, |cols| {
+                            // Coluna 1: Grade de Produtos e Cliente
+                            cols[0].group(|ui| {
+                                ui.heading("Dados da Venda");
+                                ui.horizontal(|ui| {
+                                    ui.label("Cliente:");
+                                    ui.text_edit_singleline(&mut self.venda_dados.cliente_nome);
+                                    ui.label("CPF/CNPJ:");
+                                    ui.text_edit_singleline(&mut self.venda_dados.cliente_cpf_cnpj);
+                                });
+
+                                ui.add_space(8.0);
+                                ui.label(egui::RichText::new("ITENS DA VENDA").strong().small());
+
+                                let mut item_remover = None;
+                                for (idx, it) in self.venda_dados.itens.iter().enumerate() {
+                                    ui.horizontal(|ui| {
+                                        ui.label(format!("{}. {} - {}", idx + 1, it.codigo, it.descricao));
+                                        ui.label(format!("{}x R$ {}", it.quantidade_mil as f64 / 1000.0, ThzEngine::formatar_moeda(it.preco_unitario_centavos)));
+                                        if ui.small_button("✕").clicked() {
+                                            item_remover = Some(idx);
+                                        }
+                                    });
+                                }
+                                if let Some(i) = item_remover {
+                                    self.venda_dados.itens.remove(i);
+                                    self.recalcular_venda();
+                                }
+
+                                ui.separator();
+                                ui.label(egui::RichText::new("Adicionar Item").small().color(egui::Color32::GRAY));
+                                ui.horizontal(|ui| {
+                                    ui.label("Cód:");
+                                    ui.text_edit_singleline(&mut self.novo_item_codigo);
+                                    ui.label("Desc:");
+                                    ui.text_edit_singleline(&mut self.novo_item_desc);
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.label("Qtd:");
+                                    ui.add(egui::DragValue::new(&mut self.novo_item_qtd).speed(0.5).prefix(" "));
+                                    ui.label("Preço R$:");
+                                    ui.add(egui::DragValue::new(&mut self.novo_item_preco).speed(0.5).prefix(" "));
+                                    if ui.button("+ Adicionar").clicked() {
+                                        self.venda_dados.itens.push(ItemVendaThz {
+                                            codigo: self.novo_item_codigo.clone(),
+                                            descricao: self.novo_item_desc.clone(),
+                                            quantidade_mil: (self.novo_item_qtd * 1000.0).round() as i64,
+                                            preco_unitario_centavos: (self.novo_item_preco * 100.0).round() as i64,
+                                        });
+                                        self.recalcular_venda();
+                                    }
+                                });
+
+                                ui.separator();
+                                let mut changed = false;
+                                ui.horizontal(|ui| {
+                                    ui.label("Desconto Geral: R$");
+                                    changed |= ui.add(egui::DragValue::new(&mut self.desconto_reais).speed(1.0).prefix(" ")).changed();
+                                    ui.label("Acréscimo: R$");
+                                    changed |= ui.add(egui::DragValue::new(&mut self.acrescimo_reais).speed(1.0).prefix(" ")).changed();
+                                });
+                                if changed {
+                                    self.recalcular_venda();
+                                }
+
+                                ui.horizontal(|ui| {
+                                    ui.label("Forma Pagto:");
+                                    egui::ComboBox::from_id_salt("combo_pagto")
+                                        .selected_text(&self.venda_dados.forma_pagamento)
+                                        .show_ui(ui, |ui| {
+                                            ui.selectable_value(&mut self.venda_dados.forma_pagamento, "DINHEIRO".into(), "Dinheiro");
+                                            ui.selectable_value(&mut self.venda_dados.forma_pagamento, "PIX_INSTANTANEO".into(), "PIX Instantâneo");
+                                            ui.selectable_value(&mut self.venda_dados.forma_pagamento, "CARTAO_CREDITO".into(), "Cartão de Crédito");
+                                            ui.selectable_value(&mut self.venda_dados.forma_pagamento, "CARTAO_DEBITO".into(), "Cartão de Débito");
+                                        });
+                                });
+                                if self.venda_dados.forma_pagamento == "PIX_INSTANTANEO" {
+                                    ui.horizontal(|ui| {
+                                        ui.label("Chave PIX:");
+                                        ui.text_edit_singleline(&mut self.venda_dados.chave_pix);
+                                    });
+                                }
+
+                                ui.add_space(8.0);
+                                ui.horizontal(|ui| {
+                                    if ui.button("🧾 Recalcular Cupom").clicked() {
+                                        self.recalcular_venda();
+                                    }
+                                    let print_enabled = connected && self.venda_resultado.is_some();
+                                    if ui.add_enabled(print_enabled, egui::Button::new("🖨️ Imprimir Cupom").fill(accent)).clicked() {
+                                        if let Some(res) = &self.venda_resultado {
+                                            let text = res.cupom_formatado.clone();
+                                            self.print_cp860_text(&text);
+                                        }
+                                    }
+                                });
+                            });
+
+                            // Coluna 2: Prévia Térmica
+                            cols[1].group(|ui| {
+                                ui.heading("Prévia do Cupom Térmico");
+                                if let Some(res) = &self.venda_resultado {
+                                    ui.label(egui::RichText::new(format!("Total Líquido: R$ {}", ThzEngine::formatar_moeda(res.total_liquido_centavos))).strong().size(16.0).color(accent));
+                                    ui.separator();
+                                    ui.monospace(&res.cupom_formatado);
+                                }
+                            });
+                        });
+                    });
+                }
+
+                ActiveTab::WordEscPos => {
+                    ui.horizontal(|ui| {
+                        ui.heading("📝 Word ESC/POS — Impressão de Texto Livre");
+                        ui.label(egui::RichText::new("Editor Direto para Bobina").color(accent));
+                    });
+                    ui.separator();
+
+                    ui.horizontal(|ui| {
+                        ui.label("Modelos Prontos:");
+                        if ui.button("📋 To-Do List").clicked() {
+                            self.word_texto = "LISTA DE TAREFAS DO DIA\nData: ____/____/________\n\n[ ] Abertura e contagem de caixa\n[ ] Checagem de reposicao de estoque\n[ ] Limpeza do cabecote termico\n[ ] Conferir recebimentos PIX\n[ ] Fechamento e lacre de malote\n\nAssinatura: __________________\n".into();
+                        }
+                        if ui.button("📦 Estoque / Inventário").clicked() {
+                            self.word_texto = "CONFERENCIA RAPIDA DE ESTOQUE\nSetor: Balcao / Bebidas\n\nItem             Qtd Contada  Status\n--------------------------------\nCafe Graos 1kg   [          ] [ OK ]\nLeite Integral   [          ] [ OK ]\nCopo Descartavel [          ] [ OK ]\nBobina Termica   [          ] [ OK ]\n\nResponsavel: ___________________\n".into();
+                        }
+                        if ui.button("💰 Recibo Simples").clicked() {
+                            self.word_texto = "================================\n        RECIBO DE PAGAMENTO\n================================\nValor: R$ ______________________\nRecebi de: _____________________\nReferente a: ___________________\n\nData: _____/_____/__________\n\n________________________________\n      Assinatura do Emissor\n".into();
+                        }
+                    });
+
+                    ui.separator();
+
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut self.word_negrito, "Negrito (Bold)");
+                        ui.checkbox(&mut self.word_duplo, "Tamanho Duplo");
+                        ui.label("Alinhamento:");
+                        ui.selectable_value(&mut self.word_alinhamento, 0, "Esquerda");
+                        ui.selectable_value(&mut self.word_alinhamento, 1, "Centro");
+                        ui.selectable_value(&mut self.word_alinhamento, 2, "Direita");
+
+                        if ui.add_enabled(connected, egui::Button::new("🖨️ Imprimir Texto Livre").fill(accent)).clicked() {
+                            let mut payload = vec![0x1b, b'@']; // Reset
+                            let cp = self.profile.as_ref().map(|p| p.code_page).unwrap_or(3);
+                            payload.extend_from_slice(&[0x1b, b't', cp]);
+
+                            // Alinhamento ESC a n
+                            payload.extend_from_slice(&[0x1b, b'a', self.word_alinhamento as u8]);
+
+                            // Negrito ESC E n
+                            if self.word_negrito {
+                                payload.extend_from_slice(&[0x1b, b'E', 1]);
+                            }
+
+                            // Tamanho GS ! n
+                            if self.word_duplo {
+                                payload.extend_from_slice(&[0x1d, b'!', 0x11]);
+                            }
+
+                            payload.extend(cp860(&self.word_texto));
+                            payload.extend_from_slice(&[0x1b, b'd', 4]); // Feed 4 linhas
+                            self.send_direct_bytes(&payload);
+                        }
+                    });
+
+                    ui.add_space(8.0);
+                    ui.add(
+                        egui::TextEdit::multiline(&mut self.word_texto)
+                            .font(egui::TextStyle::Monospace)
+                            .desired_width(f32::INFINITY)
+                            .desired_rows(18),
+                    );
+                }
+
+                ActiveTab::Documentos => {
+                    ui.horizontal(|ui| {
+                        ui.heading("🖨️ Documentos & Imagens");
+                        ui.label(egui::RichText::new("TXT, PNG, JPG, PDF com Dithering").color(accent));
+                    });
+                    ui.separator();
+
+                    ui.horizontal(|ui| {
+                        if ui.button("📂 Abrir Arquivo...").clicked() {
+                            if let Some(p) = FileDialog::new()
+                                .add_filter("Documentos", &["txt", "png", "jpg", "jpeg", "pdf"])
+                                .pick_file()
+                            {
+                                self.open(ctx, p);
+                            }
+                        }
+                        if let Some(f) = &self.file {
+                            ui.label(egui::RichText::new(f.file_name().unwrap_or_default().to_string_lossy()).strong());
+                        }
+
+                        let ready = !matches!(self.doc, Document::None) && self.profile.is_some() && connected;
+                        if ui.add_enabled(ready, egui::Button::new("Imprimir Documento").fill(accent)).clicked() {
+                            self.confirm = true;
+                        }
+                    });
+
+                    ui.separator();
+                    egui::ScrollArea::vertical().show(ui, |ui| match &self.doc {
+                        Document::Text(t) => {
+                            ui.label(egui::RichText::new("PRÉVIA DE TEXTO").small().color(egui::Color32::GRAY));
+                            ui.monospace(t);
+                        }
+                        Document::Rasters(pages) => {
+                            ui.label(egui::RichText::new(format!("{} página(s) renderizada(s)", pages.len())).color(egui::Color32::GRAY));
+                            if let Some(tex) = &self.texture {
+                                let size = tex.size_vec2();
+                                let scale = (ui.available_width() / size.x).min(1.45);
+                                ui.image((tex.id(), size * scale));
+                            }
+                        }
+                        Document::None => {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(40.0);
+                                ui.label(egui::RichText::new("Selecione um arquivo para gerar a prévia térmica.").color(egui::Color32::GRAY));
+                            });
+                        }
+                    });
+                }
+
+                ActiveTab::Diagnostico => {
+                    ui.horizontal(|ui| {
+                        ui.heading("⚙️ Diagnóstico & Hardware Direto");
+                        ui.label(egui::RichText::new("Sem Spooler do Windows").color(accent));
+                    });
+                    ui.separator();
+
+                    ui.group(|ui| {
+                        ui.heading("Status do Hardware");
+                        ui.label(format!("Dispositivo detectado: {}", self.device));
+                        ui.label(format!("Arquivo de Perfil: {}", self.profile_path.display()));
+                    });
+
+                    ui.add_space(10.0);
+                    ui.group(|ui| {
+                        ui.heading("Testes de Comunicação");
+                        ui.horizontal(|ui| {
+                            if ui.add_enabled(connected, egui::Button::new("Testar Largura da Bobina (384 dots)")).clicked() {
+                                let p = self.profile.as_ref().map(|p| p.printable_width_dots).unwrap_or(384);
+                                let payload = thermal_core::test_pattern(p);
+                                self.send_direct_bytes(&payload);
+                            }
+                            if ui.add_enabled(connected, egui::Button::new("Avançar Papel (4 Linhas)")).clicked() {
+                                let cmd = [0x1b, 0x64, 4];
+                                self.send_direct_bytes(&cmd);
+                            }
+                            if ui.add_enabled(connected, egui::Button::new("Reset Inicializar (ESC @)")).clicked() {
+                                let cmd = [0x1b, b'@'];
+                                self.send_direct_bytes(&cmd);
+                            }
+                        });
+                    });
+                }
+            }
         });
 
         // Modal de Confirmação de Impressão Física
@@ -1020,28 +1473,15 @@ impl eframe::App for App {
                         &self.device
                     };
                     ui.label(format!("O documento será enviado via {target_info}."));
-                    ui.label(
-                        egui::RichText::new("Sem corte, gaveta ou comandos de configuração.")
-                            .color(egui::Color32::GRAY),
-                    );
+                    ui.label(egui::RichText::new("Sem corte, gaveta ou comandos de configuração.").color(egui::Color32::GRAY));
                     ui.add_space(12.0);
                     ui.horizontal(|ui| {
                         if ui.button("Cancelar").clicked() {
-                            self.confirm = false
-                        }
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    egui::RichText::new("Confirmar e imprimir")
-                                        .color(egui::Color32::from_rgb(12, 17, 23))
-                                        .strong(),
-                                )
-                                .fill(accent),
-                            )
-                            .clicked()
-                        {
                             self.confirm = false;
-                            self.print()
+                        }
+                        if ui.add(egui::Button::new(egui::RichText::new("Confirmar e imprimir").color(egui::Color32::from_rgb(12, 17, 23)).strong()).fill(accent)).clicked() {
+                            self.confirm = false;
+                            self.print();
                         }
                     });
                 });

@@ -1,6 +1,7 @@
 /target/
 /work/
 /outputs/
+/toolchain/
 *.log
 teste.txt
 .DS_Store
