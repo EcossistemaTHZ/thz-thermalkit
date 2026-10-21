@@ -1,5 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { StoreProfileDto } from '../types';
+import { invoke } from '@tauri-apps/api/core';
+import {
+  StoreProfileDto,
+  SaleDto,
+  CashSummaryDto,
+  ProductDto,
+  CashMovementDto
+} from '../types';
 import { ThermalViewer } from './ThermalViewer';
 import {
   CashClosureData,
@@ -22,7 +29,12 @@ import {
   Printer,
   Edit3,
   Plus,
-  Trash2
+  Trash2,
+  Download,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  RefreshCw,
+  Check
 } from 'lucide-react';
 
 interface BusinessTemplatesProps {
@@ -130,6 +142,113 @@ export const BusinessTemplates: React.FC<BusinessTemplatesProps> = ({
     notes: 'Retirada no balcao.',
   }));
 
+  // Sincronização com SQLite
+  const [isSyncingCash, setIsSyncingCash] = useState(false);
+  const [syncCashSuccess, setSyncCashSuccess] = useState(false);
+
+  // Modal de Movimentação Rápida de Caixa (Sangria / Suprimento)
+  const [showMovementModal, setShowMovementModal] = useState(false);
+  const [movType, setMovType] = useState<'SANGRIA' | 'SUPRIMENTO'>('SANGRIA');
+  const [movAmount, setMovAmount] = useState('');
+  const [movDesc, setMovDesc] = useState('');
+
+  // 1. Sincronizar dados de Vendas e Caixa do SQLite
+  const handleSyncCashWithDb = async () => {
+    setIsSyncingCash(true);
+    try {
+      const [sales, summary] = await Promise.all([
+        invoke<SaleDto[]>('list_sales', { search: null }),
+        invoke<CashSummaryDto>('get_cash_summary'),
+      ]);
+
+      let cashSum = 0;
+      let creditSum = 0;
+      let debitSum = 0;
+      let pixSum = 0;
+      let otherSum = 0;
+
+      sales.forEach((s) => {
+        const total = s.total_cents / 100;
+        const method = (s.payment_method || '').toLowerCase();
+        if (method.includes('dinheiro')) cashSum += total;
+        else if (method.includes('crédito') || method.includes('credito')) creditSum += total;
+        else if (method.includes('débito') || method.includes('debito')) debitSum += total;
+        else if (method.includes('pix')) pixSum += total;
+        else otherSum += total;
+      });
+
+      const withdrawals = summary.total_outflow_cents / 100;
+
+      setCashData((prev) => ({
+        ...prev,
+        cashSales: Number(cashSum.toFixed(2)),
+        creditSales: Number(creditSum.toFixed(2)),
+        debitSales: Number(debitSum.toFixed(2)),
+        pixSales: Number(pixSum.toFixed(2)),
+        otherSales: Number(otherSum.toFixed(2)),
+        cashWithdrawals: Number(withdrawals.toFixed(2)),
+        date: new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR'),
+      }));
+
+      setSyncCashSuccess(true);
+      setTimeout(() => setSyncCashSuccess(false), 3000);
+    } catch (err: any) {
+      alert(`Falha ao sincronizar caixa com SQLite: ${String(err)}`);
+    } finally {
+      setIsSyncingCash(false);
+    }
+  };
+
+  // 2. Salvar Sangria ou Suprimento no SQLite
+  const handleSaveMovement = async () => {
+    const val = parseFloat(movAmount.replace(',', '.'));
+    if (isNaN(val) || val <= 0) {
+      alert('Informe um valor monetário válido maior que zero.');
+      return;
+    }
+
+    try {
+      const movement: CashMovementDto = {
+        movement_type: movType,
+        amount_cents: Math.round(val * 100),
+        payment_method: 'DINHEIRO',
+        description: movDesc || (movType === 'SANGRIA' ? 'Retirada de Caixa' : 'Aporte de Troco'),
+        operator: cashData.operator,
+      };
+
+      await invoke<number>('add_cash_movement', { movement });
+      setShowMovementModal(false);
+      setMovAmount('');
+      setMovDesc('');
+      await handleSyncCashWithDb();
+    } catch (err: any) {
+      alert(`Erro ao registrar ${movType}: ${String(err)}`);
+    }
+  };
+
+  // 3. Importar Catálogo do SQLite para Checagem de Estoque
+  const handleLoadInventoryFromDb = async () => {
+    try {
+      const prods = await invoke<ProductDto[]>('list_products', { search: null });
+      if (prods.length === 0) {
+        alert('Nenhum produto cadastrado no banco de dados para importar.');
+        return;
+      }
+
+      setInvData((prev) => ({
+        ...prev,
+        items: prods.map((p) => ({
+          code: p.code,
+          name: p.description,
+          systemQty: p.stock_qty,
+          unit: p.unit || 'UN',
+        })),
+      }));
+    } catch (err: any) {
+      alert(`Falha ao carregar produtos do SQLite: ${String(err)}`);
+    }
+  };
+
   // Compilação do texto conforme a aba ativa
   const compiledText = useMemo(() => {
     const store = defaultStore;
@@ -225,10 +344,127 @@ export const BusinessTemplates: React.FC<BusinessTemplatesProps> = ({
           {/* Aba: Fechamento de Caixa */}
           {activeTab === 'cash' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--accent-usb)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Calculator size={16} />
-                <span>Conferência de Caixa Diário / Turno</span>
-              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                <h3 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--accent-usb)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Calculator size={16} />
+                  <span>Conferência de Caixa Diário / Turno</span>
+                </h3>
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{
+                      padding: '5px 10px',
+                      fontSize: '0.75rem',
+                      gap: '5px',
+                      color: syncCashSuccess ? 'var(--accent-usb)' : 'var(--accent-bt)',
+                    }}
+                    onClick={handleSyncCashWithDb}
+                    disabled={isSyncingCash}
+                    title="Puxa os valores acumulados de vendas e sangrias do banco de dados SQLite"
+                  >
+                    {syncCashSuccess ? (
+                      <>
+                        <Check size={13} />
+                        <span>Sincronizado!</span>
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw size={13} className={isSyncingCash ? 'spin' : ''} />
+                        <span>Puxar do SQLite</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ padding: '5px 10px', fontSize: '0.75rem', gap: '5px' }}
+                    onClick={() => {
+                      setMovType('SANGRIA');
+                      setShowMovementModal(true);
+                    }}
+                  >
+                    <ArrowDownCircle size={13} color="var(--accent-danger)" />
+                    <span>Sangria</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ padding: '5px 10px', fontSize: '0.75rem', gap: '5px' }}
+                    onClick={() => {
+                      setMovType('SUPRIMENTO');
+                      setShowMovementModal(true);
+                    }}
+                  >
+                    <ArrowUpCircle size={13} color="var(--accent-usb)" />
+                    <span>Suprimento</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Inline de Sangria / Suprimento */}
+              {showMovementModal && (
+                <div
+                  style={{
+                    padding: '12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'rgba(255, 255, 255, 0.04)',
+                    border: '1px solid var(--accent-bt)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 700, fontSize: '0.82rem', color: movType === 'SANGRIA' ? 'var(--accent-danger)' : 'var(--accent-usb)' }}>
+                      Registrar {movType === 'SANGRIA' ? 'Sangria (Retirada de Dinheiro)' : 'Suprimento (Aporte de Troco)'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowMovementModal(false)}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.8rem' }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: '10px', alignItems: 'center' }}>
+                    <div>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Valor (R$)</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="50,00"
+                        value={movAmount}
+                        onChange={(e) => setMovAmount(e.target.value)}
+                        style={{ width: '100%', padding: '6px', borderRadius: '4px', background: '#090d16', border: '1px solid var(--border-color)', color: '#fff', fontSize: '0.85rem' }}
+                      />
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Motivo / Descrição</span>
+                      <input
+                        type="text"
+                        placeholder={movType === 'SANGRIA' ? 'Ex: Pagamento Fornecedor Pão' : 'Ex: Fundo de troco da manhã'}
+                        value={movDesc}
+                        onChange={(e) => setMovDesc(e.target.value)}
+                        style={{ width: '100%', padding: '6px', borderRadius: '4px', background: '#090d16', border: '1px solid var(--border-color)', color: '#fff', fontSize: '0.85rem' }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      style={{ padding: '7px 14px', fontSize: '0.8rem', alignSelf: 'flex-end' }}
+                      onClick={handleSaveMovement}
+                    >
+                      Confirmar
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Operador de Caixa</span>
@@ -343,10 +579,24 @@ export const BusinessTemplates: React.FC<BusinessTemplatesProps> = ({
           {/* Aba: Estoque / Inventário */}
           {activeTab === 'inventory' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--accent-usb)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <ClipboardList size={16} />
-                <span>Lista de Contagem e Auditoria de Estoque</span>
-              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                <h3 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--accent-usb)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ClipboardList size={16} />
+                  <span>Lista de Contagem e Auditoria de Estoque</span>
+                </h3>
+
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: '5px 10px', fontSize: '0.75rem', gap: '5px', color: 'var(--accent-bt)' }}
+                  onClick={handleLoadInventoryFromDb}
+                  title="Importa todos os produtos cadastrados com seus saldos de estoque atuais"
+                >
+                  <Download size={13} />
+                  <span>Importar Produtos do Banco</span>
+                </button>
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Setor / Corredor</span>

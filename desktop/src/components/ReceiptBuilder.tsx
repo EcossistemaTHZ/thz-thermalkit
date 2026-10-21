@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import {
   ReceiptData,
   ReceiptItem,
@@ -6,7 +7,13 @@ import {
   buildReceiptText,
   formatCurrency,
 } from '../utils/receiptFormatter';
-import { StoreProfileDto } from '../types';
+import {
+  StoreProfileDto,
+  ProductDto,
+  ClientDto,
+  SaleDto,
+  SaleItemDto
+} from '../types';
 import {
   Plus,
   Trash2,
@@ -26,6 +33,8 @@ import {
   User,
   Clock,
   Settings,
+  ShoppingBag,
+  CheckCircle2
 } from 'lucide-react';
 
 interface ReceiptBuilderProps {
@@ -129,6 +138,27 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
   const [newItemQty, setNewItemQty] = useState('1');
   const [newItemPrice, setNewItemPrice] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
+
+  // Catálogo de produtos e clientes do SQLite
+  const [catalogProducts, setCatalogProducts] = useState<ProductDto[]>([]);
+  const [catalogClients, setCatalogClients] = useState<ClientDto[]>([]);
+  const [isSaleCompleted, setIsSaleCompleted] = useState(false);
+
+  useEffect(() => {
+    const fetchCatalog = async () => {
+      try {
+        const [prods, clis] = await Promise.all([
+          invoke<ProductDto[]>('list_products', { search: null }),
+          invoke<ClientDto[]>('list_clients', { search: null }),
+        ]);
+        setCatalogProducts(prods);
+        setCatalogClients(clis);
+      } catch (err) {
+        console.error('Falha ao carregar catálogo para PDV:', err);
+      }
+    };
+    fetchCatalog();
+  }, []);
 
   // 6. Valores e Pagamento
   const [paymentMethod, setPaymentMethod] = useState('PIX');
@@ -280,6 +310,55 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
     setOtherExpenses(0);
     setPaymentMethod('PIX');
     setCashReceived('');
+  };
+
+  // Finalizar Venda no Caixa (Baixa de Estoque + Registro no SQLite)
+  const handleCheckoutSale = async () => {
+    if (items.length === 0) {
+      alert('Adicione pelo menos um item à venda antes de finalizar.');
+      return;
+    }
+
+    try {
+      const saleItems: SaleItemDto[] = items.map((it) => {
+        const matchedProd = catalogProducts.find(
+          (p) => p.code === it.code || p.description.toLowerCase() === it.name.toLowerCase()
+        );
+        return {
+          product_id: matchedProd?.id || null,
+          description: it.name,
+          qty: Math.max(1, Math.round(it.qty)),
+          unit_price_cents: Math.round(it.unitPrice * 100),
+          total_cents: Math.round(it.qty * it.unitPrice * 100),
+        };
+      });
+
+      const matchedClient = catalogClients.find(
+        (c) => consumer.name && c.name.toLowerCase() === consumer.name.toLowerCase()
+      );
+
+      const saleToSave: SaleDto = {
+        sale_number: orderNumber ? `VD-${orderNumber}` : '',
+        client_id: matchedClient?.id || null,
+        subtotal_cents: Math.round(subtotal * 100),
+        discount_cents: Math.round(discount * 100),
+        total_cents: Math.round(total * 100),
+        payment_method: paymentMethod,
+        status: 'CONCLUIDA',
+      };
+
+      await invoke<number>('save_sale', { sale: saleToSave, items: saleItems });
+      setIsSaleCompleted(true);
+      setTimeout(() => setIsSaleCompleted(false), 3500);
+
+      // Recarrega catálogo de produtos para sincronizar o saldo de estoque atualizado
+      const updatedProds = await invoke<ProductDto[]>('list_products', { search: null });
+      setCatalogProducts(updatedProds);
+
+      handleNewOrder();
+    } catch (err: any) {
+      alert(`Falha ao registrar venda: ${String(err)}`);
+    }
   };
 
   // Cálculos de Totais
@@ -494,10 +573,29 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
                 ref={nameInputRef}
                 className="pos-input"
                 type="text"
+                list="catalog-products-list"
                 value={newItemName}
-                onChange={(e) => setNewItemName(e.target.value)}
-                placeholder="Ex: Café Expresso (Pressione Enter para adicionar)..."
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setNewItemName(val);
+                  const matched = catalogProducts.find(
+                    (p) => p.description.toLowerCase() === val.trim().toLowerCase()
+                  );
+                  if (matched) {
+                    setNewItemCode(matched.code);
+                    setNewItemUnit(matched.unit);
+                    setNewItemPrice((matched.sale_price_cents / 100).toFixed(2));
+                  }
+                }}
+                placeholder="Ex: Digite o nome ou escolha do catálogo de produtos..."
               />
+              <datalist id="catalog-products-list">
+                {catalogProducts.map((p) => (
+                  <option key={p.id} value={p.description}>
+                    {p.code} • R$ {(p.sale_price_cents / 100).toFixed(2)} (Estoque: {p.stock_qty})
+                  </option>
+                ))}
+              </datalist>
             </div>
           </div>
 
@@ -748,6 +846,35 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
               R$ {formatCurrency(total)}
             </span>
           </div>
+
+          <button
+            type="button"
+            className="btn-primary"
+            style={{
+              marginTop: '10px',
+              padding: '10px',
+              width: '100%',
+              justifyContent: 'center',
+              fontWeight: 700,
+              fontSize: '0.85rem',
+              background: isSaleCompleted ? 'var(--accent-usb)' : 'var(--accent-bt)',
+              transition: 'background 0.3s ease',
+            }}
+            onClick={handleCheckoutSale}
+            disabled={items.length === 0}
+          >
+            {isSaleCompleted ? (
+              <>
+                <CheckCircle2 size={16} />
+                <span>Venda Registrada no Caixa!</span>
+              </>
+            ) : (
+              <>
+                <ShoppingBag size={16} />
+                <span>Finalizar Venda no Caixa (Baixa Estoque)</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 
@@ -775,10 +902,31 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
               <input
                 className="pos-input"
                 type="text"
+                list="catalog-clients-list"
                 value={consumer.name || ''}
-                onChange={(e) => setConsumer({ ...consumer, name: e.target.value })}
-                placeholder="Ex: Carlos Eduardo"
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const matched = catalogClients.find(
+                    (c) => c.name.toLowerCase() === val.trim().toLowerCase()
+                  );
+                  if (matched) {
+                    setConsumer({
+                      name: matched.name,
+                      doc: matched.document || matched.phone || '',
+                    });
+                  } else {
+                    setConsumer({ ...consumer, name: val });
+                  }
+                }}
+                placeholder="Ex: Carlos Eduardo (ou selecione da lista)"
               />
+              <datalist id="catalog-clients-list">
+                {catalogClients.map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.phone ? `Tel: ${c.phone}` : ''} {c.document ? `CPF/Doc: ${c.document}` : ''}
+                  </option>
+                ))}
+              </datalist>
             </div>
             <div>
               <label className="pos-label">CPF / Telefone</label>
