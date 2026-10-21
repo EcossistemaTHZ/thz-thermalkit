@@ -31,6 +31,13 @@ pub struct StoreProfile {
     pub state: Option<String>,
     pub zip: Option<String>,
     pub footer_message: Option<String>,
+    pub pix_key_type: Option<String>,
+    pub pix_key: Option<String>,
+    pub pix_beneficiary: Option<String>,
+    pub pix_city: Option<String>,
+    pub tech_warranty_terms: Option<String>,
+    pub tech_abandonment_terms: Option<String>,
+    pub tech_default_warranty_days: Option<i64>,
     pub onboarding_completed: bool,
     pub updated_at: Option<String>,
 }
@@ -52,6 +59,13 @@ impl Default for StoreProfile {
             state: None,
             zip: None,
             footer_message: Some("Obrigado pela preferência! Volte sempre.".to_string()),
+            pix_key_type: Some("cnpj".to_string()),
+            pix_key: None,
+            pix_beneficiary: None,
+            pix_city: None,
+            tech_warranty_terms: Some("Garantia legal de 90 dias sobre pecas e servicos, balcao, mediante este documento. Excluem-se quedas, umidade ou mau uso.".to_string()),
+            tech_abandonment_terms: Some("Aparelhos orcados ou finalizados nao retirados em 90 dias serao destinados para descarte ou reciclagem conforme CDC.".to_string()),
+            tech_default_warranty_days: Some(90),
             onboarding_completed: false,
             updated_at: None,
         }
@@ -122,6 +136,138 @@ pub struct DatabaseStats {
     pub total_snapshots: i64,
 }
 
+// ----------------------------------------------------------------------------
+// Modelos: Clientes, Produtos, Serviços, Ordem de Serviço, PDV e Caixa
+// ----------------------------------------------------------------------------
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Client {
+    pub id: Option<i64>,
+    pub name: String,
+    pub document: Option<String>,
+    pub phone: Option<String>,
+    pub whatsapp: Option<String>,
+    pub email: Option<String>,
+    pub street: Option<String>,
+    pub number: Option<String>,
+    pub complement: Option<String>,
+    pub neighborhood: Option<String>,
+    pub city: Option<String>,
+    pub state: Option<String>,
+    pub zip: Option<String>,
+    pub notes: Option<String>,
+    pub created_at: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Product {
+    pub id: Option<i64>,
+    pub code: String,
+    pub description: String,
+    pub cost_price_cents: i64,
+    pub sale_price_cents: i64,
+    pub stock_qty: i64,
+    pub min_stock_qty: i64,
+    pub unit: String,
+    pub category: Option<String>,
+    pub created_at: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ServiceItem {
+    pub id: Option<i64>,
+    pub name: String,
+    pub price_cents: i64,
+    pub description: Option<String>,
+    pub created_at: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TechnicalOrder {
+    pub id: Option<i64>,
+    pub order_number: String,
+    pub client_id: Option<i64>,
+    pub equipment_type: String, // "smartphone", "notebook", "computador", "tablet", "outro"
+    pub brand_model: String,
+    pub serial_imei: Option<String>,
+    pub device_password: Option<String>,
+    pub accessories: Option<String>,
+    pub physical_condition: Option<String>,
+    pub reported_defect: String,
+    pub technical_diagnosis: Option<String>,
+    pub solution: Option<String>,
+    pub status: String, // "ORCAMENTO", "AGUARDANDO_APROVACAO", "APROVADO", "EM_MANUTENCAO", "AGUARDANDO_PECAS", "PRONTO", "FATURADO_ENTREGUE", "CANCELADO"
+    pub warranty_days: i64,
+    pub discount_cents: i64,
+    pub total_cents: i64,
+    pub notes: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OrderItem {
+    pub id: Option<i64>,
+    pub order_id: Option<i64>,
+    pub item_type: String, // "product" | "service"
+    pub reference_id: Option<i64>,
+    pub description: String,
+    pub qty: i64,
+    pub unit_price_cents: i64,
+    pub total_cents: i64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TechnicalOrderWithDetails {
+    pub order: TechnicalOrder,
+    pub client: Option<Client>,
+    pub items: Vec<OrderItem>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Sale {
+    pub id: Option<i64>,
+    pub sale_number: String,
+    pub client_id: Option<i64>,
+    pub subtotal_cents: i64,
+    pub discount_cents: i64,
+    pub total_cents: i64,
+    pub payment_method: String,
+    pub status: String,
+    pub created_at: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SaleItem {
+    pub id: Option<i64>,
+    pub sale_id: Option<i64>,
+    pub product_id: Option<i64>,
+    pub description: String,
+    pub qty: i64,
+    pub unit_price_cents: i64,
+    pub total_cents: i64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CashMovement {
+    pub id: Option<i64>,
+    pub movement_type: String, // "ABERTURA", "ENTRADA", "SANGRIA", "SUPRIMENTO", "FECHAMENTO"
+    pub amount_cents: i64,
+    pub payment_method: Option<String>,
+    pub description: Option<String>,
+    pub operator: Option<String>,
+    pub created_at: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CashSummary {
+    pub total_sales_cents: i64,
+    pub total_service_cents: i64,
+    pub total_inflow_cents: i64,
+    pub total_outflow_cents: i64,
+    pub current_balance_cents: i64,
+}
+
 // ============================================================================
 // Inicialização e Conexão com SQLite
 // ============================================================================
@@ -180,6 +326,13 @@ pub fn open_connection() -> Result<Connection, rusqlite::Error> {
             state TEXT,
             zip TEXT,
             footer_message TEXT,
+            pix_key_type TEXT DEFAULT 'cnpj',
+            pix_key TEXT,
+            pix_beneficiary TEXT,
+            pix_city TEXT,
+            tech_warranty_terms TEXT,
+            tech_abandonment_terms TEXT,
+            tech_default_warranty_days INTEGER DEFAULT 90,
             onboarding_completed INTEGER NOT NULL DEFAULT 0,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
@@ -213,8 +366,125 @@ pub fn open_connection() -> Result<Connection, rusqlite::Error> {
             raw_text TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- ====================================================================
+        -- Tabelas Relacionais: Clientes, Produtos, Serviços, O.S. e Vendas
+        -- ====================================================================
+
+        CREATE TABLE IF NOT EXISTS clients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            document TEXT,
+            phone TEXT,
+            whatsapp TEXT,
+            email TEXT,
+            street TEXT,
+            number TEXT,
+            complement TEXT,
+            neighborhood TEXT,
+            city TEXT,
+            state TEXT,
+            zip TEXT,
+            notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL UNIQUE,
+            description TEXT NOT NULL,
+            cost_price_cents INTEGER NOT NULL DEFAULT 0,
+            sale_price_cents INTEGER NOT NULL DEFAULT 0,
+            stock_qty INTEGER NOT NULL DEFAULT 0,
+            min_stock_qty INTEGER NOT NULL DEFAULT 0,
+            unit TEXT NOT NULL DEFAULT 'UN',
+            category TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS services (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            price_cents INTEGER NOT NULL DEFAULT 0,
+            description TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS technical_orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_number TEXT NOT NULL UNIQUE,
+            client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+            equipment_type TEXT NOT NULL DEFAULT 'smartphone',
+            brand_model TEXT NOT NULL,
+            serial_imei TEXT,
+            device_password TEXT,
+            accessories TEXT,
+            physical_condition TEXT,
+            reported_defect TEXT NOT NULL,
+            technical_diagnosis TEXT,
+            solution TEXT,
+            status TEXT NOT NULL DEFAULT 'ORCAMENTO',
+            warranty_days INTEGER NOT NULL DEFAULT 90,
+            discount_cents INTEGER NOT NULL DEFAULT 0,
+            total_cents INTEGER NOT NULL DEFAULT 0,
+            notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS order_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER NOT NULL REFERENCES technical_orders(id) ON DELETE CASCADE,
+            item_type TEXT NOT NULL, -- 'product' | 'service'
+            reference_id INTEGER,
+            description TEXT NOT NULL,
+            qty INTEGER NOT NULL DEFAULT 1,
+            unit_price_cents INTEGER NOT NULL DEFAULT 0,
+            total_cents INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS sales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sale_number TEXT NOT NULL UNIQUE,
+            client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+            subtotal_cents INTEGER NOT NULL DEFAULT 0,
+            discount_cents INTEGER NOT NULL DEFAULT 0,
+            total_cents INTEGER NOT NULL DEFAULT 0,
+            payment_method TEXT NOT NULL DEFAULT 'DINHEIRO',
+            status TEXT NOT NULL DEFAULT 'CONCLUIDA',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS sale_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+            product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+            description TEXT NOT NULL,
+            qty INTEGER NOT NULL DEFAULT 1,
+            unit_price_cents INTEGER NOT NULL DEFAULT 0,
+            total_cents INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS cash_movements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            movement_type TEXT NOT NULL, -- 'ABERTURA', 'ENTRADA', 'SANGRIA', 'SUPRIMENTO', 'FECHAMENTO'
+            amount_cents INTEGER NOT NULL DEFAULT 0,
+            payment_method TEXT,
+            description TEXT,
+            operator TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
         ",
     )?;
+
+    // Migrações dinâmicas idempotentes para bancos existentes
+    let _ = conn.execute("ALTER TABLE store_profile ADD COLUMN pix_key_type TEXT DEFAULT 'cnpj'", []);
+    let _ = conn.execute("ALTER TABLE store_profile ADD COLUMN pix_key TEXT", []);
+    let _ = conn.execute("ALTER TABLE store_profile ADD COLUMN pix_beneficiary TEXT", []);
+    let _ = conn.execute("ALTER TABLE store_profile ADD COLUMN pix_city TEXT", []);
+    let _ = conn.execute("ALTER TABLE store_profile ADD COLUMN tech_warranty_terms TEXT", []);
+    let _ = conn.execute("ALTER TABLE store_profile ADD COLUMN tech_abandonment_terms TEXT", []);
+    let _ = conn.execute("ALTER TABLE store_profile ADD COLUMN tech_default_warranty_days INTEGER DEFAULT 90", []);
 
     // Insere app_config inicial se não existir
     let count: i64 = conn.query_row(
@@ -242,7 +512,9 @@ pub fn get_store_profile_db() -> Result<StoreProfile, String> {
     let mut stmt = conn
         .prepare(
             "SELECT name, legal_name, doc, phone, whatsapp, email, street, number, complement,
-                    neighborhood, city, state, zip, footer_message, onboarding_completed, updated_at
+                    neighborhood, city, state, zip, footer_message, onboarding_completed, updated_at,
+                    pix_key_type, pix_key, pix_beneficiary, pix_city, tech_warranty_terms,
+                    tech_abandonment_terms, tech_default_warranty_days
              FROM store_profile WHERE id = 1",
         )
         .map_err(|e| e.to_string())?;
@@ -267,6 +539,13 @@ pub fn get_store_profile_db() -> Result<StoreProfile, String> {
                 footer_message: row.get(13)?,
                 onboarding_completed: onboarding_int != 0,
                 updated_at: row.get(15)?,
+                pix_key_type: row.get(16)?,
+                pix_key: row.get(17)?,
+                pix_beneficiary: row.get(18)?,
+                pix_city: row.get(19)?,
+                tech_warranty_terms: row.get(20)?,
+                tech_abandonment_terms: row.get(21)?,
+                tech_default_warranty_days: row.get(22)?,
             })
         })
         .optional()
@@ -284,8 +563,10 @@ pub fn save_store_profile_db(profile: &StoreProfile) -> Result<(), String> {
     tx.execute(
         "INSERT INTO store_profile (
             id, name, legal_name, doc, phone, whatsapp, email, street, number, complement,
-            neighborhood, city, state, zip, footer_message, onboarding_completed, updated_at
-        ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+            neighborhood, city, state, zip, footer_message, onboarding_completed, updated_at,
+            pix_key_type, pix_key, pix_beneficiary, pix_city, tech_warranty_terms,
+            tech_abandonment_terms, tech_default_warranty_days
+        ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
         ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             legal_name = excluded.legal_name,
@@ -302,7 +583,14 @@ pub fn save_store_profile_db(profile: &StoreProfile) -> Result<(), String> {
             zip = excluded.zip,
             footer_message = excluded.footer_message,
             onboarding_completed = excluded.onboarding_completed,
-            updated_at = excluded.updated_at",
+            updated_at = excluded.updated_at,
+            pix_key_type = excluded.pix_key_type,
+            pix_key = excluded.pix_key,
+            pix_beneficiary = excluded.pix_beneficiary,
+            pix_city = excluded.pix_city,
+            tech_warranty_terms = excluded.tech_warranty_terms,
+            tech_abandonment_terms = excluded.tech_abandonment_terms,
+            tech_default_warranty_days = excluded.tech_default_warranty_days",
         params![
             profile.name,
             profile.legal_name,
@@ -319,7 +607,14 @@ pub fn save_store_profile_db(profile: &StoreProfile) -> Result<(), String> {
             profile.zip,
             profile.footer_message,
             if profile.onboarding_completed { 1 } else { 0 },
-            now
+            now,
+            profile.pix_key_type,
+            profile.pix_key,
+            profile.pix_beneficiary,
+            profile.pix_city,
+            profile.tech_warranty_terms,
+            profile.tech_abandonment_terms,
+            profile.tech_default_warranty_days
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -655,3 +950,777 @@ pub fn export_receipts_csv_db() -> Result<String, String> {
 
     Ok(csv)
 }
+
+// ============================================================================
+// Módulo de Clientes (Clientes MapOS & PDV)
+// ============================================================================
+
+pub fn list_clients_db(search: Option<String>) -> Result<Vec<Client>, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    let sql = if let Some(ref s) = search {
+        if !s.trim().is_empty() {
+            "SELECT id, name, document, phone, whatsapp, email, street, number, complement,
+                    neighborhood, city, state, zip, notes, created_at
+             FROM clients
+             WHERE name LIKE ?1 OR document LIKE ?1 OR phone LIKE ?1 OR whatsapp LIKE ?1
+             ORDER BY name ASC LIMIT 100"
+        } else {
+            "SELECT id, name, document, phone, whatsapp, email, street, number, complement,
+                    neighborhood, city, state, zip, notes, created_at
+             FROM clients ORDER BY name ASC LIMIT 200"
+        }
+    } else {
+        "SELECT id, name, document, phone, whatsapp, email, street, number, complement,
+                neighborhood, city, state, zip, notes, created_at
+         FROM clients ORDER BY name ASC LIMIT 200"
+    };
+
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let param = search.map(|s| format!("%{}%", s.trim())).unwrap_or_default();
+
+    let rows = if !param.is_empty() {
+        stmt.query_map(params![param], map_client_row)
+    } else {
+        stmt.query_map([], map_client_row)
+    }
+    .map_err(|e| e.to_string())?;
+
+    let mut clients = Vec::new();
+    for row in rows {
+        if let Ok(c) = row {
+            clients.push(c);
+        }
+    }
+    Ok(clients)
+}
+
+fn map_client_row(r: &rusqlite::Row) -> rusqlite::Result<Client> {
+    Ok(Client {
+        id: Some(r.get(0)?),
+        name: r.get(1)?,
+        document: r.get(2)?,
+        phone: r.get(3)?,
+        whatsapp: r.get(4)?,
+        email: r.get(5)?,
+        street: r.get(6)?,
+        number: r.get(7)?,
+        complement: r.get(8)?,
+        neighborhood: r.get(9)?,
+        city: r.get(10)?,
+        state: r.get(11)?,
+        zip: r.get(12)?,
+        notes: r.get(13)?,
+        created_at: r.get(14)?,
+    })
+}
+
+pub fn save_client_db(client: &Client) -> Result<i64, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    if let Some(id) = client.id {
+        conn.execute(
+            "UPDATE clients SET
+                name = ?1, document = ?2, phone = ?3, whatsapp = ?4, email = ?5,
+                street = ?6, number = ?7, complement = ?8, neighborhood = ?9,
+                city = ?10, state = ?11, zip = ?12, notes = ?13
+             WHERE id = ?14",
+            params![
+                client.name,
+                client.document,
+                client.phone,
+                client.whatsapp,
+                client.email,
+                client.street,
+                client.number,
+                client.complement,
+                client.neighborhood,
+                client.city,
+                client.state,
+                client.zip,
+                client.notes,
+                id
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(id)
+    } else {
+        conn.execute(
+            "INSERT INTO clients (
+                name, document, phone, whatsapp, email, street, number, complement,
+                neighborhood, city, state, zip, notes
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![
+                client.name,
+                client.document,
+                client.phone,
+                client.whatsapp,
+                client.email,
+                client.street,
+                client.number,
+                client.complement,
+                client.neighborhood,
+                client.city,
+                client.state,
+                client.zip,
+                client.notes
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(conn.last_insert_rowid())
+    }
+}
+
+pub fn delete_client_db(id: i64) -> Result<(), String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM clients WHERE id = ?1", params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ============================================================================
+// Módulo de Produtos & Peças (com Controle de Estoque)
+// ============================================================================
+
+pub fn list_products_db(search: Option<String>) -> Result<Vec<Product>, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    let sql = if let Some(ref s) = search {
+        if !s.trim().is_empty() {
+            "SELECT id, code, description, cost_price_cents, sale_price_cents, stock_qty, min_stock_qty, unit, category, created_at
+             FROM products
+             WHERE description LIKE ?1 OR code LIKE ?1 OR category LIKE ?1
+             ORDER BY description ASC LIMIT 100"
+        } else {
+            "SELECT id, code, description, cost_price_cents, sale_price_cents, stock_qty, min_stock_qty, unit, category, created_at
+             FROM products ORDER BY description ASC LIMIT 200"
+        }
+    } else {
+        "SELECT id, code, description, cost_price_cents, sale_price_cents, stock_qty, min_stock_qty, unit, category, created_at
+         FROM products ORDER BY description ASC LIMIT 200"
+    };
+
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let param = search.map(|s| format!("%{}%", s.trim())).unwrap_or_default();
+
+    let rows = if !param.is_empty() {
+        stmt.query_map(params![param], map_product_row)
+    } else {
+        stmt.query_map([], map_product_row)
+    }
+    .map_err(|e| e.to_string())?;
+
+    let mut prods = Vec::new();
+    for row in rows {
+        if let Ok(p) = row {
+            prods.push(p);
+        }
+    }
+    Ok(prods)
+}
+
+fn map_product_row(r: &rusqlite::Row) -> rusqlite::Result<Product> {
+    Ok(Product {
+        id: Some(r.get(0)?),
+        code: r.get(1)?,
+        description: r.get(2)?,
+        cost_price_cents: r.get(3)?,
+        sale_price_cents: r.get(4)?,
+        stock_qty: r.get(5)?,
+        min_stock_qty: r.get(6)?,
+        unit: r.get(7)?,
+        category: r.get(8)?,
+        created_at: r.get(9)?,
+    })
+}
+
+pub fn save_product_db(product: &Product) -> Result<i64, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    if let Some(id) = product.id {
+        conn.execute(
+            "UPDATE products SET
+                code = ?1, description = ?2, cost_price_cents = ?3, sale_price_cents = ?4,
+                stock_qty = ?5, min_stock_qty = ?6, unit = ?7, category = ?8
+             WHERE id = ?9",
+            params![
+                product.code,
+                product.description,
+                product.cost_price_cents,
+                product.sale_price_cents,
+                product.stock_qty,
+                product.min_stock_qty,
+                product.unit,
+                product.category,
+                id
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(id)
+    } else {
+        conn.execute(
+            "INSERT INTO products (code, description, cost_price_cents, sale_price_cents, stock_qty, min_stock_qty, unit, category)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                product.code,
+                product.description,
+                product.cost_price_cents,
+                product.sale_price_cents,
+                product.stock_qty,
+                product.min_stock_qty,
+                product.unit,
+                product.category
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(conn.last_insert_rowid())
+    }
+}
+
+pub fn delete_product_db(id: i64) -> Result<(), String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM products WHERE id = ?1", params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ============================================================================
+// Módulo de Serviços (Mão de Obra)
+// ============================================================================
+
+pub fn list_services_db(search: Option<String>) -> Result<Vec<ServiceItem>, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    let sql = if let Some(ref s) = search {
+        if !s.trim().is_empty() {
+            "SELECT id, name, price_cents, description, created_at FROM services WHERE name LIKE ?1 ORDER BY name ASC LIMIT 100"
+        } else {
+            "SELECT id, name, price_cents, description, created_at FROM services ORDER BY name ASC LIMIT 200"
+        }
+    } else {
+        "SELECT id, name, price_cents, description, created_at FROM services ORDER BY name ASC LIMIT 200"
+    };
+
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let param = search.map(|s| format!("%{}%", s.trim())).unwrap_or_default();
+
+    let rows = if !param.is_empty() {
+        stmt.query_map(params![param], map_service_row)
+    } else {
+        stmt.query_map([], map_service_row)
+    }
+    .map_err(|e| e.to_string())?;
+
+    let mut list = Vec::new();
+    for row in rows {
+        if let Ok(s) = row {
+            list.push(s);
+        }
+    }
+    Ok(list)
+}
+
+fn map_service_row(r: &rusqlite::Row) -> rusqlite::Result<ServiceItem> {
+    Ok(ServiceItem {
+        id: Some(r.get(0)?),
+        name: r.get(1)?,
+        price_cents: r.get(2)?,
+        description: r.get(3)?,
+        created_at: r.get(4)?,
+    })
+}
+
+pub fn save_service_db(service: &ServiceItem) -> Result<i64, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    if let Some(id) = service.id {
+        conn.execute(
+            "UPDATE services SET name = ?1, price_cents = ?2, description = ?3 WHERE id = ?4",
+            params![service.name, service.price_cents, service.description, id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(id)
+    } else {
+        conn.execute(
+            "INSERT INTO services (name, price_cents, description) VALUES (?1, ?2, ?3)",
+            params![service.name, service.price_cents, service.description],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(conn.last_insert_rowid())
+    }
+}
+
+pub fn delete_service_db(id: i64) -> Result<(), String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM services WHERE id = ?1", params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ============================================================================
+// Módulo de Ordens de Serviço (Assistência Técnica MapOS)
+// ============================================================================
+
+pub fn list_technical_orders_db(
+    status: Option<String>,
+    search: Option<String>,
+) -> Result<Vec<TechnicalOrder>, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+
+    let mut query = String::from(
+        "SELECT id, order_number, client_id, equipment_type, brand_model, serial_imei,
+                device_password, accessories, physical_condition, reported_defect,
+                technical_diagnosis, solution, status, warranty_days, discount_cents,
+                total_cents, notes, created_at, updated_at
+         FROM technical_orders WHERE 1=1 ",
+    );
+
+    let mut param_values: Vec<String> = Vec::new();
+
+    if let Some(ref st) = status {
+        if !st.trim().is_empty() && st != "TODOS" {
+            query.push_str("AND status = ? ");
+            param_values.push(st.clone());
+        }
+    }
+
+    if let Some(ref sc) = search {
+        if !sc.trim().is_empty() {
+            query.push_str("AND (order_number LIKE ? OR brand_model LIKE ? OR serial_imei LIKE ? OR reported_defect LIKE ?) ");
+            let s_pattern = format!("%{}%", sc.trim());
+            param_values.push(s_pattern.clone());
+            param_values.push(s_pattern.clone());
+            param_values.push(s_pattern.clone());
+            param_values.push(s_pattern);
+        }
+    }
+
+    query.push_str("ORDER BY id DESC LIMIT 150");
+
+    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+    let params_slice: Vec<&dyn rusqlite::ToSql> = param_values
+        .iter()
+        .map(|s| s as &dyn rusqlite::ToSql)
+        .collect();
+
+    let rows = stmt
+        .query_map(&params_slice[..], |r| map_order_row(r))
+        .map_err(|e| e.to_string())?;
+
+    let mut list = Vec::new();
+    for row in rows {
+        if let Ok(order) = row {
+            list.push(order);
+        }
+    }
+    Ok(list)
+}
+
+fn map_order_row(r: &rusqlite::Row) -> rusqlite::Result<TechnicalOrder> {
+    Ok(TechnicalOrder {
+        id: Some(r.get(0)?),
+        order_number: r.get(1)?,
+        client_id: r.get(2)?,
+        equipment_type: r.get(3)?,
+        brand_model: r.get(4)?,
+        serial_imei: r.get(5)?,
+        device_password: r.get(6)?,
+        accessories: r.get(7)?,
+        physical_condition: r.get(8)?,
+        reported_defect: r.get(9)?,
+        technical_diagnosis: r.get(10)?,
+        solution: r.get(11)?,
+        status: r.get(12)?,
+        warranty_days: r.get(13)?,
+        discount_cents: r.get(14)?,
+        total_cents: r.get(15)?,
+        notes: r.get(16)?,
+        created_at: r.get(17)?,
+        updated_at: r.get(18)?,
+    })
+}
+
+pub fn get_technical_order_db(id: i64) -> Result<TechnicalOrderWithDetails, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, order_number, client_id, equipment_type, brand_model, serial_imei,
+                    device_password, accessories, physical_condition, reported_defect,
+                    technical_diagnosis, solution, status, warranty_days, discount_cents,
+                    total_cents, notes, created_at, updated_at
+             FROM technical_orders WHERE id = ?1",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let order = stmt
+        .query_row(params![id], |r| map_order_row(r))
+        .map_err(|e| format!("Ordem de serviço {id} não encontrada: {e}"))?;
+
+    // Busca cliente se houver
+    let client = if let Some(client_id) = order.client_id {
+        let mut cstmt = conn
+            .prepare(
+                "SELECT id, name, document, phone, whatsapp, email, street, number, complement,
+                        neighborhood, city, state, zip, notes, created_at
+                 FROM clients WHERE id = ?1",
+            )
+            .map_err(|e| e.to_string())?;
+        cstmt.query_row(params![client_id], |r| map_client_row(r)).ok()
+    } else {
+        None
+    };
+
+    // Busca itens
+    let mut istmt = conn
+        .prepare(
+            "SELECT id, order_id, item_type, reference_id, description, qty, unit_price_cents, total_cents
+             FROM order_items WHERE order_id = ?1",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let item_rows = istmt
+        .query_map(params![id], |r| {
+            Ok(OrderItem {
+                id: Some(r.get(0)?),
+                order_id: Some(r.get(1)?),
+                item_type: r.get(2)?,
+                reference_id: r.get(3)?,
+                description: r.get(4)?,
+                qty: r.get(5)?,
+                unit_price_cents: r.get(6)?,
+                total_cents: r.get(7)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut items = Vec::new();
+    for i in item_rows {
+        if let Ok(item) = i {
+            items.push(item);
+        }
+    }
+
+    Ok(TechnicalOrderWithDetails { order, client, items })
+}
+
+pub fn save_technical_order_db(
+    mut order: TechnicalOrder,
+    items: Vec<OrderItem>,
+) -> Result<i64, String> {
+    let mut conn = open_connection().map_err(|e| e.to_string())?;
+    let now = Utc::now().to_rfc3339();
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let order_id = if let Some(id) = order.id {
+        tx.execute(
+            "UPDATE technical_orders SET
+                client_id = ?1, equipment_type = ?2, brand_model = ?3, serial_imei = ?4,
+                device_password = ?5, accessories = ?6, physical_condition = ?7,
+                reported_defect = ?8, technical_diagnosis = ?9, solution = ?10,
+                status = ?11, warranty_days = ?12, discount_cents = ?13,
+                total_cents = ?14, notes = ?15, updated_at = ?16
+             WHERE id = ?17",
+            params![
+                order.client_id,
+                order.equipment_type,
+                order.brand_model,
+                order.serial_imei,
+                order.device_password,
+                order.accessories,
+                order.physical_condition,
+                order.reported_defect,
+                order.technical_diagnosis,
+                order.solution,
+                order.status,
+                order.warranty_days,
+                order.discount_cents,
+                order.total_cents,
+                order.notes,
+                now,
+                id
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Remove itens antigos para reinserção atômica
+        tx.execute("DELETE FROM order_items WHERE order_id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+
+        id
+    } else {
+        // Se order_number for vazio, gera sequencial
+        if order.order_number.trim().is_empty() {
+            let next_num: i64 = tx
+                .query_row("SELECT IFNULL(MAX(id), 0) + 1 FROM technical_orders", [], |r| r.get(0))
+                .unwrap_or(1);
+            order.order_number = format!("{:04}", next_num);
+        }
+
+        tx.execute(
+            "INSERT INTO technical_orders (
+                order_number, client_id, equipment_type, brand_model, serial_imei,
+                device_password, accessories, physical_condition, reported_defect,
+                technical_diagnosis, solution, status, warranty_days, discount_cents,
+                total_cents, notes, created_at, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+            params![
+                order.order_number,
+                order.client_id,
+                order.equipment_type,
+                order.brand_model,
+                order.serial_imei,
+                order.device_password,
+                order.accessories,
+                order.physical_condition,
+                order.reported_defect,
+                order.technical_diagnosis,
+                order.solution,
+                order.status,
+                order.warranty_days,
+                order.discount_cents,
+                order.total_cents,
+                order.notes,
+                now,
+                now
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+
+        tx.last_insert_rowid()
+    };
+
+    // Insere itens da O.S.
+    for it in items {
+        tx.execute(
+            "INSERT INTO order_items (order_id, item_type, reference_id, description, qty, unit_price_cents, total_cents)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                order_id,
+                it.item_type,
+                it.reference_id,
+                it.description,
+                it.qty,
+                it.unit_price_cents,
+                it.total_cents
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(order_id)
+}
+
+pub fn update_order_status_db(id: i64, new_status: &str) -> Result<(), String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE technical_orders SET status = ?1, updated_at = ?2 WHERE id = ?3",
+        params![new_status, now, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ============================================================================
+// Módulo de PDV Universal (Vendas de Balcão e Caixa)
+// ============================================================================
+
+pub fn save_sale_db(mut sale: Sale, items: Vec<SaleItem>) -> Result<i64, String> {
+    let mut conn = open_connection().map_err(|e| e.to_string())?;
+    let now = Utc::now().to_rfc3339();
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    if sale.sale_number.trim().is_empty() {
+        let next_num: i64 = tx
+            .query_row("SELECT IFNULL(MAX(id), 0) + 1 FROM sales", [], |r| r.get(0))
+            .unwrap_or(1);
+        sale.sale_number = format!("VD-{:04}", next_num);
+    }
+
+    tx.execute(
+        "INSERT INTO sales (sale_number, client_id, subtotal_cents, discount_cents, total_cents, payment_method, status, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            sale.sale_number,
+            sale.client_id,
+            sale.subtotal_cents,
+            sale.discount_cents,
+            sale.total_cents,
+            sale.payment_method,
+            sale.status,
+            now
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let sale_id = tx.last_insert_rowid();
+
+    for it in items {
+        tx.execute(
+            "INSERT INTO sale_items (sale_id, product_id, description, qty, unit_price_cents, total_cents)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                sale_id,
+                it.product_id,
+                it.description,
+                it.qty,
+                it.unit_price_cents,
+                it.total_cents
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Baixa automática de estoque se o produto estiver cadastrado
+        if let Some(prod_id) = it.product_id {
+            tx.execute(
+                "UPDATE products SET stock_qty = stock_qty - ?1 WHERE id = ?2",
+                params![it.qty, prod_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
+    // Registra entrada no caixa
+    tx.execute(
+        "INSERT INTO cash_movements (movement_type, amount_cents, payment_method, description, created_at)
+         VALUES ('ENTRADA', ?1, ?2, ?3, ?4)",
+        params![
+            sale.total_cents,
+            sale.payment_method,
+            format!("Venda PDV {}", sale.sale_number),
+            now
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(sale_id)
+}
+
+pub fn list_sales_db(limit: u32) -> Result<Vec<Sale>, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, sale_number, client_id, subtotal_cents, discount_cents, total_cents, payment_method, status, created_at
+             FROM sales ORDER BY id DESC LIMIT ?1",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map(params![limit], |r| {
+            Ok(Sale {
+                id: Some(r.get(0)?),
+                sale_number: r.get(1)?,
+                client_id: r.get(2)?,
+                subtotal_cents: r.get(3)?,
+                discount_cents: r.get(4)?,
+                total_cents: r.get(5)?,
+                payment_method: r.get(6)?,
+                status: r.get(7)?,
+                created_at: r.get(8)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut list = Vec::new();
+    for row in rows {
+        if let Ok(s) = row {
+            list.push(s);
+        }
+    }
+    Ok(list)
+}
+
+pub fn add_cash_movement_db(movement: &CashMovement) -> Result<i64, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    let now = Utc::now().to_rfc3339();
+
+    conn.execute(
+        "INSERT INTO cash_movements (movement_type, amount_cents, payment_method, description, operator, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            movement.movement_type,
+            movement.amount_cents,
+            movement.payment_method,
+            movement.description,
+            movement.operator,
+            now
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn list_cash_movements_db(limit: u32) -> Result<Vec<CashMovement>, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, movement_type, amount_cents, payment_method, description, operator, created_at
+             FROM cash_movements ORDER BY id DESC LIMIT ?1",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map(params![limit], |r| {
+            Ok(CashMovement {
+                id: Some(r.get(0)?),
+                movement_type: r.get(1)?,
+                amount_cents: r.get(2)?,
+                payment_method: r.get(3)?,
+                description: r.get(4)?,
+                operator: r.get(5)?,
+                created_at: r.get(6)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut list = Vec::new();
+    for row in rows {
+        if let Ok(m) = row {
+            list.push(m);
+        }
+    }
+    Ok(list)
+}
+
+pub fn get_cash_summary_db() -> Result<CashSummary, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+
+    let total_sales: i64 = conn
+        .query_row("SELECT IFNULL(SUM(total_cents), 0) FROM sales WHERE status = 'CONCLUIDA'", [], |r| r.get(0))
+        .unwrap_or(0);
+
+    let total_services: i64 = conn
+        .query_row(
+            "SELECT IFNULL(SUM(total_cents), 0) FROM technical_orders WHERE status = 'FATURADO_ENTREGUE'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+
+    let total_inflow: i64 = conn
+        .query_row(
+            "SELECT IFNULL(SUM(amount_cents), 0) FROM cash_movements WHERE movement_type IN ('ABERTURA', 'ENTRADA', 'SUPRIMENTO')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+
+    let total_outflow: i64 = conn
+        .query_row(
+            "SELECT IFNULL(SUM(amount_cents), 0) FROM cash_movements WHERE movement_type IN ('SANGRIA', 'FECHAMENTO')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+
+    let current_balance = total_inflow - total_outflow;
+
+    Ok(CashSummary {
+        total_sales_cents: total_sales,
+        total_service_cents: total_services,
+        total_inflow_cents: total_inflow,
+        total_outflow_cents: total_outflow,
+        current_balance_cents: current_balance,
+    })
+}
+

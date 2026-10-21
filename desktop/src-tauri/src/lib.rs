@@ -23,12 +23,18 @@ use thermal_core::{
 
 mod db;
 use db::{
-    create_config_snapshot_db, create_database_backup_db, export_receipts_csv_db,
-    export_white_label_bundle_db, get_app_config_db, get_database_stats_db,
-    get_store_profile_db, import_white_label_bundle_db, list_config_snapshots_db,
-    list_receipt_history_db, rollback_config_snapshot_db, save_app_config_db,
-    save_receipt_history_db, save_store_profile_db, vacuum_database_db, AppConfig,
-    ConfigSnapshot, DatabaseStats, ReceiptHistoryItem, StoreProfile,
+    add_cash_movement_db, create_config_snapshot_db, create_database_backup_db,
+    delete_client_db, delete_product_db, delete_service_db, export_receipts_csv_db,
+    export_white_label_bundle_db, get_app_config_db, get_cash_summary_db,
+    get_database_stats_db, get_store_profile_db, get_technical_order_db,
+    import_white_label_bundle_db, list_cash_movements_db, list_clients_db,
+    list_config_snapshots_db, list_products_db, list_receipt_history_db,
+    list_sales_db, list_services_db, list_technical_orders_db, rollback_config_snapshot_db,
+    save_app_config_db, save_client_db, save_product_db, save_receipt_history_db,
+    save_sale_db, save_service_db, save_store_profile_db, save_technical_order_db,
+    update_order_status_db, vacuum_database_db, AppConfig, CashMovement, CashSummary,
+    Client, ConfigSnapshot, DatabaseStats, OrderItem, Product, ReceiptHistoryItem,
+    Sale, SaleItem, ServiceItem, StoreProfile, TechnicalOrder, TechnicalOrderWithDetails,
 };
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -447,6 +453,106 @@ fn export_receipts_csv() -> Result<String, String> {
     export_receipts_csv_db()
 }
 
+// ============================================================================
+// Novos Comandos IPC: Clientes, Produtos, Serviços, O.S., Vendas e Caixa
+// ============================================================================
+
+#[tauri::command]
+fn list_clients(search: Option<String>) -> Result<Vec<Client>, String> {
+    list_clients_db(search)
+}
+
+#[tauri::command]
+fn save_client(client: Client) -> Result<i64, String> {
+    save_client_db(&client)
+}
+
+#[tauri::command]
+fn delete_client(id: i64) -> Result<(), String> {
+    delete_client_db(id)
+}
+
+#[tauri::command]
+fn list_products(search: Option<String>) -> Result<Vec<Product>, String> {
+    list_products_db(search)
+}
+
+#[tauri::command]
+fn save_product(product: Product) -> Result<i64, String> {
+    save_product_db(&product)
+}
+
+#[tauri::command]
+fn delete_product(id: i64) -> Result<(), String> {
+    delete_product_db(id)
+}
+
+#[tauri::command]
+fn list_services(search: Option<String>) -> Result<Vec<ServiceItem>, String> {
+    list_services_db(search)
+}
+
+#[tauri::command]
+fn save_service(service: ServiceItem) -> Result<i64, String> {
+    save_service_db(&service)
+}
+
+#[tauri::command]
+fn delete_service(id: i64) -> Result<(), String> {
+    delete_service_db(id)
+}
+
+#[tauri::command]
+fn list_technical_orders(
+    status: Option<String>,
+    search: Option<String>,
+) -> Result<Vec<TechnicalOrder>, String> {
+    list_technical_orders_db(status, search)
+}
+
+#[tauri::command]
+fn get_technical_order(id: i64) -> Result<TechnicalOrderWithDetails, String> {
+    get_technical_order_db(id)
+}
+
+#[tauri::command]
+fn save_technical_order(
+    order: TechnicalOrder,
+    items: Vec<OrderItem>,
+) -> Result<i64, String> {
+    save_technical_order_db(order, items)
+}
+
+#[tauri::command]
+fn update_order_status(id: i64, new_status: String) -> Result<(), String> {
+    update_order_status_db(id, &new_status)
+}
+
+#[tauri::command]
+fn save_sale(sale: Sale, items: Vec<SaleItem>) -> Result<i64, String> {
+    save_sale_db(sale, items)
+}
+
+#[tauri::command]
+fn list_sales(limit: Option<u32>) -> Result<Vec<Sale>, String> {
+    list_sales_db(limit.unwrap_or(100))
+}
+
+#[tauri::command]
+fn add_cash_movement(movement: CashMovement) -> Result<i64, String> {
+    add_cash_movement_db(&movement)
+}
+
+#[tauri::command]
+fn list_cash_movements(limit: Option<u32>) -> Result<Vec<CashMovement>, String> {
+    list_cash_movements_db(limit.unwrap_or(100))
+}
+
+#[tauri::command]
+fn get_cash_summary() -> Result<CashSummary, String> {
+    get_cash_summary_db()
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -471,7 +577,25 @@ pub fn run() {
             import_white_label_bundle,
             save_receipt_history,
             list_receipt_history,
-            export_receipts_csv
+            export_receipts_csv,
+            list_clients,
+            save_client,
+            delete_client,
+            list_products,
+            save_product,
+            delete_product,
+            list_services,
+            save_service,
+            delete_service,
+            list_technical_orders,
+            get_technical_order,
+            save_technical_order,
+            update_order_status,
+            save_sale,
+            list_sales,
+            add_cash_movement,
+            list_cash_movements,
+            get_cash_summary
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
