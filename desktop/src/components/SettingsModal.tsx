@@ -18,7 +18,9 @@ import {
   X,
   RefreshCw,
   FileSpreadsheet,
-  Archive
+  Archive,
+  QrCode,
+  Wrench
 } from 'lucide-react';
 
 interface SettingsModalProps {
@@ -31,7 +33,7 @@ interface SettingsModalProps {
   onNotification: (type: 'success' | 'error', msg: string) => void;
 }
 
-type SettingsTab = 'store' | 'branding' | 'backup' | 'vacuum' | 'replication';
+type SettingsTab = 'store' | 'pix' | 'tech' | 'branding' | 'backup' | 'vacuum' | 'replication';
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
@@ -269,6 +271,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
 
           <button
+            className={`btn-secondary ${tab === 'pix' ? 'active-toggle' : ''}`}
+            onClick={() => setTab('pix')}
+            style={{ borderRadius: '0', borderBottom: tab === 'pix' ? '2px solid var(--accent-usb)' : 'none', padding: '12px 14px', background: 'transparent' }}
+          >
+            <QrCode size={15} />
+            <span>Chave PIX & Pagamentos</span>
+          </button>
+
+          <button
+            className={`btn-secondary ${tab === 'tech' ? 'active-toggle' : ''}`}
+            onClick={() => setTab('tech')}
+            style={{ borderRadius: '0', borderBottom: tab === 'tech' ? '2px solid var(--accent-usb)' : 'none', padding: '12px 14px', background: 'transparent' }}
+          >
+            <Wrench size={15} />
+            <span>Assistência Técnica & CDC</span>
+          </button>
+
+          <button
             className={`btn-secondary ${tab === 'branding' ? 'active-toggle' : ''}`}
             onClick={() => setTab('branding')}
             style={{ borderRadius: '0', borderBottom: tab === 'branding' ? '2px solid var(--accent-usb)' : 'none', padding: '12px 14px', background: 'transparent' }}
@@ -455,7 +475,167 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </form>
           )}
 
-          {/* Aba 2: White-Label */}
+          {/* Aba PIX: Pagamentos & QRCode */}
+          {tab === 'pix' && (
+            <form onSubmit={handleSaveStore} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '6px',
+                  background: 'rgba(59, 130, 246, 0.08)',
+                  border: '1px solid rgba(59, 130, 246, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                }}
+              >
+                <QrCode size={24} color="var(--accent-usb)" />
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '0.9rem', color: '#fff' }}>Recebimento Instantâneo via PIX</h4>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Estes dados são utilizados automaticamente nas impressões térmicas de PDV e nos comprovantes de Ordens de Serviço.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tipo de Chave PIX *</span>
+                  <select
+                    value={store.pix_key_type || 'cnpj'}
+                    onChange={(e) => setStore({ ...store, pix_key_type: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+                  >
+                    <option value="cnpj">CNPJ</option>
+                    <option value="cpf">CPF</option>
+                    <option value="email">E-mail</option>
+                    <option value="phone">Telefone / Celular</option>
+                    <option value="random">Chave Aleatória (EVP)</option>
+                  </select>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Chave PIX *</span>
+                  <input
+                    type="text"
+                    placeholder="Ex: 16.843.110/0001-71 ou chave aleatória..."
+                    value={store.pix_key || ''}
+                    onChange={(e) => setStore({ ...store, pix_key: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '12px' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Nome do Beneficiário / Titular da Conta</span>
+                  <input
+                    type="text"
+                    placeholder="Ex: Lucas Thomaz / THZ InfoCell"
+                    value={store.pix_beneficiary || ''}
+                    onChange={(e) => setStore({ ...store, pix_beneficiary: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+                  />
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Cidade do Titular</span>
+                  <input
+                    type="text"
+                    placeholder="Ex: Nova Iguaçu"
+                    value={store.pix_city || ''}
+                    onChange={(e) => setStore({ ...store, pix_city: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+                  />
+                </div>
+              </div>
+
+              {/* Preview na Bobina */}
+              <div style={{ background: '#090d16', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Prévia no Rodapé da Bobina Térmica (58mm):
+                </span>
+                <div style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#a0aec0', marginTop: '6px', whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>
+                  {`--------------------------------\nPAGAMENTO VIA PIX\nCHAVE: ${store.pix_key || '[NÃO CONFIGURADA]'}\nTITULAR: ${store.pix_beneficiary || store.name}\n--------------------------------`}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                <button type="submit" className="btn-primary usb" disabled={isLoading} style={{ gap: '8px' }}>
+                  <CheckCircle2 size={16} />
+                  <span>{isLoading ? 'Salvando...' : 'Salvar Dados do PIX'}</span>
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Aba Assistência Técnica: Prazos e CDC */}
+          {tab === 'tech' && (
+            <form onSubmit={handleSaveStore} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '6px',
+                  background: 'rgba(234, 179, 8, 0.08)',
+                  border: '1px solid rgba(234, 179, 8, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                }}
+              >
+                <Wrench size={24} color="#eab308" />
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '0.9rem', color: '#fff' }}>Parâmetros da Assistência Técnica (MapOS inspired)</h4>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Defina prazos de garantia balcão e cláusulas legais impressas nos comprovantes de entrada e saída de equipamentos.
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Prazo Padrão de Garantia Legal (em dias) *</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="365"
+                  value={store.tech_default_warranty_days || 90}
+                  onChange={(e) => setStore({ ...store, tech_default_warranty_days: parseInt(e.target.value) || 90 })}
+                  style={{ width: '160px', padding: '8px 12px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+                />
+              </div>
+
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Termo Padrão de Garantia (Impresso no comprovante de saída / entrega)
+                </span>
+                <textarea
+                  rows={3}
+                  value={store.tech_warranty_terms || ''}
+                  onChange={(e) => setStore({ ...store, tech_warranty_terms: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff', resize: 'vertical' }}
+                />
+              </div>
+
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Cláusula de Guarda e Abandono de Aparelhos (Artigo do CDC - Impresso na via de entrada)
+                </span>
+                <textarea
+                  rows={3}
+                  value={store.tech_abandonment_terms || ''}
+                  onChange={(e) => setStore({ ...store, tech_abandonment_terms: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff', resize: 'vertical' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                <button type="submit" className="btn-primary usb" disabled={isLoading} style={{ gap: '8px' }}>
+                  <CheckCircle2 size={16} />
+                  <span>{isLoading ? 'Salvando...' : 'Salvar Termos de Assistência'}</span>
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Aba White-Label */}
           {tab === 'branding' && (
             <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
