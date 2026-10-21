@@ -10,7 +10,12 @@
  * - Comandas e Ordens de Serviço Rápidas
  */
 
-import { StoreProfileDto } from '../types';
+import {
+  StoreProfileDto,
+  ClientDto,
+  TechnicalOrderDto,
+  OrderItemDto
+} from '../types';
 
 export interface ReceiptItem {
   id: string;
@@ -234,6 +239,15 @@ export function formatStoreHeader(store: StoreProfileDto, width: number = 32): s
 
 export function formatStoreFooter(store: StoreProfileDto, width: number = 32): string[] {
   const lines: string[] = [];
+  if (store.pix_key && store.pix_key.trim().length > 0) {
+    lines.push(divider('-', width));
+    lines.push(centerText('PAGAMENTO INSTANTANEO PIX', width));
+    lines.push(padLine('CHAVE:', store.pix_key, width));
+    if (store.pix_beneficiary) {
+      lines.push(padLine('TITULAR:', store.pix_beneficiary.toUpperCase(), width));
+    }
+    lines.push(divider('-', width));
+  }
   const msg = store.footer_message || 'Obrigado pela preferência! Volte sempre.';
   lines.push(...wrapCenterText(msg, width));
   return lines;
@@ -595,3 +609,175 @@ export function buildQuickOrderText(data: QuickOrderData, width: number = 32): s
 
   return lines.join('\n') + '\n\n';
 }
+
+// ============================================================================
+// 7. Assistência Técnica: Comprovante de Entrada (com Canhoto de Bancada)
+// ============================================================================
+
+export function buildTechnicalOrderEntryText(
+  order: TechnicalOrderDto,
+  client: ClientDto | null,
+  store: StoreProfileDto,
+  width: number = 32
+): string {
+  const lines: string[] = [];
+
+  // Cabeçalho
+  lines.push(...formatStoreHeader(store, width));
+  lines.push(divider('=', width));
+  lines.push(centerText(`ENTRADA DE O.S. #${order.order_number}`, width));
+  lines.push(divider('=', width));
+
+  const dt = order.created_at
+    ? new Date(order.created_at).toLocaleString('pt-BR')
+    : new Date().toLocaleString('pt-BR');
+  lines.push(padLine('DATA/HORA:', dt, width));
+  lines.push(padLine('STATUS:', order.status, width));
+
+  lines.push(divider('-', width));
+  lines.push(centerText('DADOS DO CLIENTE', width));
+  lines.push(divider('-', width));
+  lines.push(padLine('CLIENTE:', (client?.name || 'CONSUMIDOR BALCAO').toUpperCase(), width));
+  if (client?.phone || client?.whatsapp) {
+    lines.push(padLine('CONTATO:', client.whatsapp || client.phone || '', width));
+  }
+  if (client?.document) {
+    lines.push(padLine('CPF/CNPJ:', client.document, width));
+  }
+
+  lines.push(divider('-', width));
+  lines.push(centerText('EQUIPAMENTO & TRIAGEM', width));
+  lines.push(divider('-', width));
+  lines.push(padLine('TIPO:', order.equipment_type.toUpperCase(), width));
+  lines.push(padLine('MODELO:', order.brand_model.toUpperCase(), width));
+  if (order.serial_imei) {
+    lines.push(padLine('IMEI/SERIAL:', order.serial_imei, width));
+  }
+  if (order.device_password) {
+    lines.push(padLine('SENHA:', `[ ${order.device_password} ]`, width));
+  }
+  if (order.physical_condition) {
+    lines.push(...wrapCenterText(`ESTADO: ${order.physical_condition.toUpperCase()}`, width));
+  }
+  if (order.accessories) {
+    lines.push(...wrapCenterText(`ACESSORIOS: ${order.accessories.toUpperCase()}`, width));
+  }
+
+  lines.push(divider('-', width));
+  lines.push(centerText('DEFEITO RECLAMADO', width));
+  lines.push(divider('-', width));
+  lines.push(...wrapCenterText(order.reported_defect.toUpperCase(), width));
+
+  if (store.tech_abandonment_terms) {
+    lines.push(divider('-', width));
+    lines.push(...wrapCenterText(store.tech_abandonment_terms.toUpperCase(), width));
+  }
+
+  lines.push(divider('=', width));
+  lines.push(...formatStoreFooter(store, width));
+  lines.push(divider('=', width));
+
+  // Canhoto Destacado para colar com fita no aparelho do cliente na bancada
+  lines.push('');
+  lines.push(centerText('(Destaque e anexe ao aparelho)', width));
+  lines.push(divider('- - ', width));
+  lines.push(centerText(`CANHOTO BANCADA O.S. #${order.order_number}`, width));
+  lines.push(padLine('CLI:', (client?.name || 'BALCAO').slice(0, 16).toUpperCase(), width));
+  lines.push(padLine('EQ:', order.brand_model.slice(0, 18).toUpperCase(), width));
+  if (order.device_password) {
+    lines.push(padLine('SENHA:', `[ ${order.device_password} ]`, width));
+  }
+  lines.push(padLine('DEF:', order.reported_defect.slice(0, 20).toUpperCase(), width));
+  lines.push(divider('- - ', width));
+  lines.push('\n\n');
+
+  return lines.join('\n');
+}
+
+// ============================================================================
+// 8. Assistência Técnica: Comprovante de Saída + Termo de Garantia CDC
+// ============================================================================
+
+export function buildTechnicalOrderFinalText(
+  order: TechnicalOrderDto,
+  client: ClientDto | null,
+  items: OrderItemDto[],
+  store: StoreProfileDto,
+  width: number = 32
+): string {
+  const lines: string[] = [];
+
+  // Cabeçalho
+  lines.push(...formatStoreHeader(store, width));
+  lines.push(divider('=', width));
+  lines.push(centerText(`O.S. FINALIZADA #${order.order_number}`, width));
+  lines.push(divider('=', width));
+
+  const dt = new Date().toLocaleString('pt-BR');
+  lines.push(padLine('EMISSAO/SAIDA:', dt, width));
+  lines.push(padLine('CLIENTE:', (client?.name || 'CONSUMIDOR BALCAO').toUpperCase(), width));
+  if (client?.document) {
+    lines.push(padLine('CPF/CNPJ:', client.document, width));
+  }
+  lines.push(padLine('EQUIPAMENTO:', order.brand_model.toUpperCase(), width));
+  if (order.serial_imei) {
+    lines.push(padLine('SERIAL/IMEI:', order.serial_imei, width));
+  }
+
+  if (order.technical_diagnosis || order.solution) {
+    lines.push(divider('-', width));
+    lines.push(centerText('LAUDO & SOLUCAO TECNICA', width));
+    lines.push(divider('-', width));
+    if (order.technical_diagnosis) {
+      lines.push(...wrapCenterText(`LAUDO: ${order.technical_diagnosis.toUpperCase()}`, width));
+    }
+    if (order.solution) {
+      lines.push(...wrapCenterText(`SOLUCAO: ${order.solution.toUpperCase()}`, width));
+    }
+  }
+
+  lines.push(divider('-', width));
+  lines.push(centerText('DETALHAMENTO DE ITENS', width));
+  lines.push(divider('-', width));
+
+  let subtotal = 0;
+  items.forEach((it) => {
+    const val = it.total_cents / 100;
+    subtotal += val;
+    const prefix = it.item_type === 'product' ? '[P]' : '[S]';
+    lines.push(padLine(`${prefix} ${it.qty}x ${it.description.toUpperCase()}`, `R$ ${formatCurrency(val)}`, width));
+  });
+
+  lines.push(divider('-', width));
+  const desc = order.discount_cents / 100;
+  const tot = order.total_cents > 0 ? order.total_cents / 100 : Math.max(0, subtotal - desc);
+
+  lines.push(padLine('SUBTOTAL:', `R$ ${formatCurrency(subtotal)}`, width));
+  if (desc > 0) {
+    lines.push(padLine('DESCONTO:', `-R$ ${formatCurrency(desc)}`, width));
+  }
+  lines.push(divider('=', width));
+  lines.push(padLine('TOTAL PAGO:', `R$ ${formatCurrency(tot)}`, width));
+  lines.push(divider('=', width));
+
+  // Termo de Garantia Legal (CDC)
+  lines.push(centerText('TERMO DE GARANTIA LEGAL', width));
+  lines.push(divider('-', width));
+  const days = order.warranty_days || store.tech_default_warranty_days || 90;
+  const warrantyTxt = store.tech_warranty_terms || `Garantia legal de ${days} dias sobre pecas e servicos, balcao.`;
+  lines.push(...wrapCenterText(warrantyTxt.toUpperCase(), width));
+
+  lines.push('');
+  lines.push(centerText('Assinatura do Cliente:', width));
+  lines.push('');
+  lines.push(centerText('________________________________', width));
+  lines.push(centerText((client?.name || 'CLIENTE').toUpperCase(), width));
+
+  lines.push(divider('=', width));
+  lines.push(...formatStoreFooter(store, width));
+  lines.push(divider('=', width));
+  lines.push('\n\n');
+
+  return lines.join('\n');
+}
+

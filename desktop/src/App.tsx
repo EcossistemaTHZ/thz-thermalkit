@@ -14,6 +14,8 @@ import { ConfirmModal } from './components/ConfirmModal';
 import { ReceiptBuilder } from './components/ReceiptBuilder';
 import { WordEscPos } from './components/WordEscPos';
 import { BusinessTemplates } from './components/BusinessTemplates';
+import { TechAssistanceModule } from './components/TechAssistanceModule';
+import { BaseRegistersModule } from './components/BaseRegistersModule';
 import { OnboardingScreen } from './components/OnboardingModal';
 import { SettingsModal } from './components/SettingsModal';
 import {
@@ -25,7 +27,9 @@ import {
   Printer,
   CheckCircle2,
   AlertCircle,
-  Briefcase
+  Briefcase,
+  Wrench,
+  Users
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -54,10 +58,11 @@ export const App: React.FC = () => {
   const [widthDots, setWidthDots] = useState<number>(384);
   const [codePage, setCodePage] = useState<number>(3); // CP860 Português
 
-  // Abas: 'receipt' (Notinha/Caixa), 'word' (Word ESC/POS), 'templates' (Utilitários de Gestão) ou 'file' (PDF/IMG)
-  const [activeTab, setActiveTab] = useState<'receipt' | 'word' | 'templates' | 'file'>('receipt');
+  // Abas: 'tech' (Assistência Técnica O.S.), 'registers' (Cadastros Base), 'receipt' (PDV Balcão), 'word' (Word ESC/POS), 'templates' ou 'file'
+  const [activeTab, setActiveTab] = useState<'tech' | 'registers' | 'receipt' | 'word' | 'templates' | 'file'>('tech');
 
   // Textos compilados de cada aba
+  const [compiledTechText, setCompiledTechText] = useState<string>('');
   const [compiledReceiptText, setCompiledReceiptText] = useState<string>('');
   const [wordEscPosText, setWordEscPosText] = useState<string>('');
   const [templateText, setTemplateText] = useState<string>('');
@@ -205,11 +210,12 @@ export const App: React.FC = () => {
 
   // Texto ativo a ser impresso
   const currentActiveText = useMemo(() => {
+    if (activeTab === 'tech') return compiledTechText;
     if (activeTab === 'receipt') return compiledReceiptText;
     if (activeTab === 'word') return wordEscPosText;
     if (activeTab === 'templates') return templateText;
     return '';
-  }, [activeTab, compiledReceiptText, wordEscPosText, templateText]);
+  }, [activeTab, compiledTechText, compiledReceiptText, wordEscPosText, templateText]);
 
   // Disparo da Impressão Direta
   const handleExecutePrint = async () => {
@@ -245,8 +251,17 @@ export const App: React.FC = () => {
   // Objeto virtual de preview para a confirmação
   const virtualTextPreview: DocumentPreviewDto | null = useMemo(() => {
     if (activeTab === 'file') return preview;
+    const fileName =
+      activeTab === 'tech'
+        ? 'ordem_servico.txt'
+        : activeTab === 'receipt'
+        ? 'comprovante.txt'
+        : activeTab === 'word'
+        ? 'word_escpos.txt'
+        : 'template.txt';
+
     return {
-      file_name: activeTab === 'receipt' ? 'comprovante.txt' : (activeTab === 'word' ? 'word_escpos.txt' : 'template.txt'),
+      file_name: fileName,
       file_path: '',
       file_size: currentActiveText.length,
       kind: 'text',
@@ -364,14 +379,30 @@ export const App: React.FC = () => {
         <main className="viewer-panel glass-panel">
           {/* Barra Superior da Área de Impressão */}
           <div className="viewer-header">
-            {/* Seletor de Modo (Notinha vs Word ESC/POS vs Utilitários vs Arquivo) */}
+            {/* Seletor de Modo (Assistência Técnica vs Cadastros vs PDV vs Word vs Utilitários vs Arquivo) */}
             <div className="mode-switch-container">
+              <button
+                className={`mode-tab-btn ${activeTab === 'tech' ? 'active' : ''}`}
+                onClick={() => setActiveTab('tech')}
+              >
+                <Wrench size={14} color="var(--accent-usb)" />
+                <span>Assistência Técnica (O.S.)</span>
+              </button>
+
+              <button
+                className={`mode-tab-btn ${activeTab === 'registers' ? 'active' : ''}`}
+                onClick={() => setActiveTab('registers')}
+              >
+                <Users size={14} color="#10b981" />
+                <span>Cadastros & Base</span>
+              </button>
+
               <button
                 className={`mode-tab-btn ${activeTab === 'receipt' ? 'active' : ''}`}
                 onClick={() => setActiveTab('receipt')}
               >
                 <Receipt size={14} />
-                <span>Comprovante / Pedido</span>
+                <span>PDV Balcão / Recibo</span>
               </button>
 
               <button
@@ -429,7 +460,26 @@ export const App: React.FC = () => {
 
           {/* Área Central: Renderização de cada Aba */}
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {activeTab === 'receipt' ? (
+            {activeTab === 'tech' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: showPreview && compiledTechText ? '1fr 315px' : '1fr', gap: '16px', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                <TechAssistanceModule
+                  widthDots={widthDots}
+                  storeProfile={storeProfile}
+                  onSendToPrint={(compiled) => {
+                    setCompiledTechText(compiled);
+                    setIsConfirmOpen(true);
+                  }}
+                  onNotification={showToast}
+                />
+                {showPreview && compiledTechText && (
+                  <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                    <ThermalViewer preview={virtualTextPreview} widthDots={widthDots} />
+                  </div>
+                )}
+              </div>
+            ) : activeTab === 'registers' ? (
+              <BaseRegistersModule onNotification={showToast} />
+            ) : activeTab === 'receipt' ? (
               <div style={{ display: 'grid', gridTemplateColumns: showPreview ? '1fr 315px' : '1fr', gap: '16px', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 <ReceiptBuilder
                   widthDots={widthDots}
