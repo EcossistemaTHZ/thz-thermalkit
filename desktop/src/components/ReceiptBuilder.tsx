@@ -103,33 +103,8 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
   });
   const [isConsumerExpanded, setIsConsumerExpanded] = useState(false);
 
-  // 5. Lista de Itens do Pedido
-  const [items, setItems] = useState<ReceiptItem[]>([
-    {
-      id: '1',
-      code: '001',
-      name: 'Cafe Expresso',
-      unit: 'UN',
-      qty: 2,
-      unitPrice: 6.0,
-    },
-    {
-      id: '2',
-      code: '002',
-      name: 'Pao na Chapa',
-      unit: 'UN',
-      qty: 1,
-      unitPrice: 7.5,
-    },
-    {
-      id: '3',
-      code: '003',
-      name: 'Agua Mineral',
-      unit: 'UN',
-      qty: 1,
-      unitPrice: 4.0,
-    },
-  ]);
+  // 5. Lista de Itens do Pedido (Inicia vazia para operacao real de PDV)
+  const [items, setItems] = useState<ReceiptItem[]>([]);
 
   // Campos para cadastro de novo item
   const [newItemCode, setNewItemCode] = useState('');
@@ -599,30 +574,41 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '75px 65px 110px 1fr', gap: '8px', alignItems: 'flex-end' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '90px 85px 140px auto 1fr', gap: '8px', alignItems: 'flex-end', marginTop: '4px' }}>
             <div>
-              <label className="pos-label">Qtd</label>
+              <label className="pos-label">Quantidade</label>
               <input
                 className="pos-input"
-                type="text"
+                type="number"
+                step="any"
+                min="0.001"
                 value={newItemQty}
                 onChange={(e) => setNewItemQty(e.target.value)}
               />
             </div>
 
             <div>
-              <label className="pos-label">UN</label>
+              <label className="pos-label">Unidade</label>
               <input
                 className="pos-input"
                 type="text"
+                list="pos-units-list"
                 value={newItemUnit}
-                onChange={(e) => setNewItemUnit(e.target.value)}
+                onChange={(e) => setNewItemUnit(e.target.value.toUpperCase())}
                 placeholder="UN"
               />
+              <datalist id="pos-units-list">
+                <option value="UN" />
+                <option value="KG" />
+                <option value="L" />
+                <option value="CX" />
+                <option value="PC" />
+                <option value="MT" />
+              </datalist>
             </div>
 
             <div>
-              <label className="pos-label">Unit R$</label>
+              <label className="pos-label">Preço Unit. (R$)</label>
               <input
                 className="pos-input"
                 type="text"
@@ -632,11 +618,20 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
               />
             </div>
 
+            {/* Subtotal do Item em tempo real */}
+            <div style={{ paddingBottom: '6px' }}>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block' }}>Subtotal Item</span>
+              <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--accent-usb)', whiteSpace: 'nowrap' }}>
+                R$ {(Math.max(0, (parseFloat(newItemQty.replace(',', '.')) || 0) * (parseFloat(newItemPrice.replace(',', '.')) || 0))).toFixed(2)}
+              </span>
+            </div>
+
             <button
               type="submit"
               className="btn-primary bt"
-              style={{ padding: '7px 12px', fontSize: '0.8rem', borderRadius: 'var(--radius-sm)', height: '35px' }}
+              style={{ padding: '7px 14px', fontSize: '0.82rem', borderRadius: 'var(--radius-sm)', height: '36px', justifyContent: 'center' }}
               disabled={!newItemName.trim()}
+              title="Adicionar à lista do pedido (Pressione Enter)"
             >
               <Plus size={15} />
               <span>Adicionar Item</span>
