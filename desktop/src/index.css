@@ -835,4 +835,71 @@ body {
   justify-content: space-between;
 }
 
+/* ==========================================================================
+   MODAIS & POPUPS EM PRIMEIRO PLANO (DIALOGS / OVERLAYS GLOBAIS)
+   ========================================================================== */
+.modal-backdrop,
+.modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background: rgba(4, 8, 19, 0.82) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  z-index: 99999 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 24px !important;
+  overflow-y: auto !important;
+  box-sizing: border-box !important;
+  animation: modalOverlayFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.modal-box,
+.modal-card {
+  position: relative !important;
+  background: #0b1220 !important;
+  border: 1px solid rgba(56, 189, 248, 0.25) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: 0 25px 60px -10px rgba(0, 0, 0, 0.85), 
+              0 0 35px rgba(14, 165, 233, 0.15),
+              inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  padding: 24px !important;
+  max-width: 900px;
+  width: 100%;
+  max-height: 90vh !important;
+  overflow-y: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-sizing: border-box !important;
+  animation: modalContentPopIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+@keyframes modalOverlayFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalContentPopIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+
 

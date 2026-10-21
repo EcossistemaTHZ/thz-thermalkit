@@ -9,9 +9,9 @@ import {
   Plus,
   Trash2,
   Edit2,
-  AlertTriangle,
-  X
+  AlertTriangle
 } from 'lucide-react';
+import { ModalDialog } from './ModalDialog';
 
 interface BaseRegistersModuleProps {
   onNotification: (type: 'success' | 'error', msg: string) => void;
@@ -452,264 +452,252 @@ export const BaseRegistersModule: React.FC<BaseRegistersModuleProps> = ({
       )}
 
       {/* Modal de Criação / Edição de Cliente */}
-      {isClientModalOpen && editingClient && (
-        <div className="modal-backdrop" style={{ zIndex: 9999 }}>
-          <div className="modal-box" style={{ maxWidth: '600px', width: '90%' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}>
-                {editingClient.id ? 'Editar Cliente' : 'Novo Cliente'}
-              </h3>
-              <button className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsClientModalOpen(false)}>
-                <X size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleSaveClient} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Nome Completo *</span>
-                  <input
-                    type="text"
-                    required
-                    value={editingClient.name}
-                    onChange={(e) => setEditingClient({ ...editingClient, name: e.target.value })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
-                  />
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>CPF / CNPJ</span>
-                  <input
-                    type="text"
-                    value={editingClient.document || ''}
-                    onChange={(e) => setEditingClient({ ...editingClient, document: e.target.value })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>WhatsApp</span>
-                  <input
-                    type="text"
-                    value={editingClient.whatsapp || ''}
-                    onChange={(e) => setEditingClient({ ...editingClient, whatsapp: e.target.value })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
-                  />
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Telefone Fixo</span>
-                  <input
-                    type="text"
-                    value={editingClient.phone || ''}
-                    onChange={(e) => setEditingClient({ ...editingClient, phone: e.target.value })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Rua / Endereço</span>
-                  <input
-                    type="text"
-                    value={editingClient.street || ''}
-                    onChange={(e) => setEditingClient({ ...editingClient, street: e.target.value })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
-                  />
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Bairro</span>
-                  <input
-                    type="text"
-                    value={editingClient.neighborhood || ''}
-                    onChange={(e) => setEditingClient({ ...editingClient, neighborhood: e.target.value })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
-                  />
-                </div>
-              </div>
-
+      {editingClient && (
+        <ModalDialog
+          isOpen={isClientModalOpen}
+          onClose={() => setIsClientModalOpen(false)}
+          title={editingClient.id ? 'Editar Cliente' : 'Novo Cliente'}
+          icon={<Users size={18} color="var(--accent-usb)" />}
+          maxWidth="640px"
+        >
+          <form onSubmit={handleSaveClient} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '6px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
               <div>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Observações</span>
-                <textarea
-                  rows={2}
-                  value={editingClient.notes || ''}
-                  onChange={(e) => setEditingClient({ ...editingClient, notes: e.target.value })}
-                  style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
-                <button type="button" className="btn-secondary" onClick={() => setIsClientModalOpen(false)}>Cancelar</button>
-                <button type="submit" className="btn-primary usb">Salvar Cliente</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de Criação / Edição de Produto */}
-      {isProductModalOpen && editingProduct && (
-        <div className="modal-backdrop" style={{ zIndex: 9999 }}>
-          <div className="modal-box" style={{ maxWidth: '600px', width: '90%' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}>
-                {editingProduct.id ? 'Editar Produto / Peça' : 'Novo Produto / Peça'}
-              </h3>
-              <button className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsProductModalOpen(false)}>
-                <X size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleSaveProduct} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px' }}>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Código *</span>
-                  <input
-                    type="text"
-                    required
-                    value={editingProduct.code}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, code: e.target.value.toUpperCase() })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
-                  />
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Descrição do Item *</span>
-                  <input
-                    type="text"
-                    required
-                    value={editingProduct.description}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, description: e.target.value })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Preço Custo (R$)</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={(editingProduct.cost_price_cents / 100).toFixed(2)}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, cost_price_cents: Math.round(parseFloat(e.target.value || '0') * 100) })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
-                  />
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Preço Venda (R$) *</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={(editingProduct.sale_price_cents / 100).toFixed(2)}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, sale_price_cents: Math.round(parseFloat(e.target.value || '0') * 100) })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
-                  />
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Categoria</span>
-                  <input
-                    type="text"
-                    value={editingProduct.category || ''}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, category: e.target.value })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Estoque Atual</span>
-                  <input
-                    type="number"
-                    value={editingProduct.stock_qty}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, stock_qty: parseInt(e.target.value) || 0 })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
-                  />
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Estoque Mínimo</span>
-                  <input
-                    type="number"
-                    value={editingProduct.min_stock_qty}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, min_stock_qty: parseInt(e.target.value) || 0 })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
-                  />
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Unidade</span>
-                  <input
-                    type="text"
-                    value={editingProduct.unit}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, unit: e.target.value.toUpperCase() })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
-                <button type="button" className="btn-secondary" onClick={() => setIsProductModalOpen(false)}>Cancelar</button>
-                <button type="submit" className="btn-primary usb">Salvar Produto</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de Criação / Edição de Serviço */}
-      {isServiceModalOpen && editingService && (
-        <div className="modal-backdrop" style={{ zIndex: 9999 }}>
-          <div className="modal-box" style={{ maxWidth: '500px', width: '90%' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}>
-                {editingService.id ? 'Editar Serviço' : 'Novo Serviço'}
-              </h3>
-              <button className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsServiceModalOpen(false)}>
-                <X size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleSaveService} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Nome do Serviço *</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Nome Completo *</span>
                 <input
                   type="text"
                   required
-                  placeholder="Ex: Troca de Conector de Carga Tipo-C"
-                  value={editingService.name}
-                  onChange={(e) => setEditingService({ ...editingService, name: e.target.value })}
+                  value={editingClient.name}
+                  onChange={(e) => setEditingClient({ ...editingClient, name: e.target.value })}
                   style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
                 />
               </div>
-
               <div>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Valor Padrão da Mão de Obra (R$) *</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>CPF / CNPJ</span>
+                <input
+                  type="text"
+                  value={editingClient.document || ''}
+                  onChange={(e) => setEditingClient({ ...editingClient, document: e.target.value })}
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>WhatsApp</span>
+                <input
+                  type="text"
+                  value={editingClient.whatsapp || ''}
+                  onChange={(e) => setEditingClient({ ...editingClient, whatsapp: e.target.value })}
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+                />
+              </div>
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Telefone Fixo</span>
+                <input
+                  type="text"
+                  value={editingClient.phone || ''}
+                  onChange={(e) => setEditingClient({ ...editingClient, phone: e.target.value })}
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Rua / Endereço</span>
+                <input
+                  type="text"
+                  value={editingClient.street || ''}
+                  onChange={(e) => setEditingClient({ ...editingClient, street: e.target.value })}
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+                />
+              </div>
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Bairro</span>
+                <input
+                  type="text"
+                  value={editingClient.neighborhood || ''}
+                  onChange={(e) => setEditingClient({ ...editingClient, neighborhood: e.target.value })}
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Observações</span>
+              <textarea
+                rows={2}
+                value={editingClient.notes || ''}
+                onChange={(e) => setEditingClient({ ...editingClient, notes: e.target.value })}
+                style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
+              <button type="button" className="btn-secondary" onClick={() => setIsClientModalOpen(false)}>Cancelar</button>
+              <button type="submit" className="btn-primary usb">Salvar Cliente</button>
+            </div>
+          </form>
+        </ModalDialog>
+      )}
+
+      {/* Modal de Criação / Edição de Produto */}
+      {editingProduct && (
+        <ModalDialog
+          isOpen={isProductModalOpen}
+          onClose={() => setIsProductModalOpen(false)}
+          title={editingProduct.id ? 'Editar Produto / Peça' : 'Novo Produto / Peça'}
+          icon={<Package size={18} color="#eab308" />}
+          maxWidth="640px"
+        >
+          <form onSubmit={handleSaveProduct} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '6px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px' }}>
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Código *</span>
+                <input
+                  type="text"
+                  required
+                  value={editingProduct.code}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, code: e.target.value.toUpperCase() })}
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+                />
+              </div>
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Descrição do Item *</span>
+                <input
+                  type="text"
+                  required
+                  value={editingProduct.description}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, description: e.target.value })}
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Preço Custo (R$)</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={(editingProduct.cost_price_cents / 100).toFixed(2)}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, cost_price_cents: Math.round(parseFloat(e.target.value || '0') * 100) })}
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+                />
+              </div>
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Preço Venda (R$) *</span>
                 <input
                   type="number"
                   step="0.01"
                   required
-                  value={(editingService.price_cents / 100).toFixed(2)}
-                  onChange={(e) => setEditingService({ ...editingService, price_cents: Math.round(parseFloat(e.target.value || '0') * 100) })}
+                  value={(editingProduct.sale_price_cents / 100).toFixed(2)}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, sale_price_cents: Math.round(parseFloat(e.target.value || '0') * 100) })}
                   style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
                 />
               </div>
-
               <div>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Descrição do Procedimento</span>
-                <textarea
-                  rows={2}
-                  placeholder="Detalhes ou passos do serviço..."
-                  value={editingService.description || ''}
-                  onChange={(e) => setEditingService({ ...editingService, description: e.target.value })}
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Categoria</span>
+                <input
+                  type="text"
+                  value={editingProduct.category || ''}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, category: e.target.value })}
                   style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
                 />
               </div>
+            </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
-                <button type="button" className="btn-secondary" onClick={() => setIsServiceModalOpen(false)}>Cancelar</button>
-                <button type="submit" className="btn-primary usb">Salvar Serviço</button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Estoque Atual</span>
+                <input
+                  type="number"
+                  value={editingProduct.stock_qty}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, stock_qty: parseInt(e.target.value) || 0 })}
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+                />
               </div>
-            </form>
-          </div>
-        </div>
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Estoque Mínimo</span>
+                <input
+                  type="number"
+                  value={editingProduct.min_stock_qty}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, min_stock_qty: parseInt(e.target.value) || 0 })}
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+                />
+              </div>
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Unidade</span>
+                <input
+                  type="text"
+                  value={editingProduct.unit}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, unit: e.target.value.toUpperCase() })}
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
+              <button type="button" className="btn-secondary" onClick={() => setIsProductModalOpen(false)}>Cancelar</button>
+              <button type="submit" className="btn-primary usb">Salvar Produto</button>
+            </div>
+          </form>
+        </ModalDialog>
+      )}
+
+      {/* Modal de Criação / Edição de Serviço */}
+      {editingService && (
+        <ModalDialog
+          isOpen={isServiceModalOpen}
+          onClose={() => setIsServiceModalOpen(false)}
+          title={editingService.id ? 'Editar Serviço' : 'Novo Serviço'}
+          icon={<Wrench size={18} color="#10b981" />}
+          maxWidth="540px"
+        >
+          <form onSubmit={handleSaveService} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '6px' }}>
+            <div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Nome do Serviço *</span>
+              <input
+                type="text"
+                required
+                placeholder="Ex: Troca de Conector de Carga Tipo-C"
+                value={editingService.name}
+                onChange={(e) => setEditingService({ ...editingService, name: e.target.value })}
+                style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+              />
+            </div>
+
+            <div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Valor Padrão da Mão de Obra (R$) *</span>
+              <input
+                type="number"
+                step="0.01"
+                required
+                value={(editingService.price_cents / 100).toFixed(2)}
+                onChange={(e) => setEditingService({ ...editingService, price_cents: Math.round(parseFloat(e.target.value || '0') * 100) })}
+                style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+              />
+            </div>
+
+            <div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Descrição do Procedimento</span>
+              <textarea
+                rows={2}
+                placeholder="Detalhes ou passos do serviço..."
+                value={editingService.description || ''}
+                onChange={(e) => setEditingService({ ...editingService, description: e.target.value })}
+                style={{ width: '100%', padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
+              <button type="button" className="btn-secondary" onClick={() => setIsServiceModalOpen(false)}>Cancelar</button>
+              <button type="submit" className="btn-primary usb">Salvar Serviço</button>
+            </div>
+          </form>
+        </ModalDialog>
       )}
     </div>
   );

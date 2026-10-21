@@ -1,26 +1,37 @@
 # THZ-LANG — Fechamento de Caixa na Sintaxe Moderna Enxuta
 programa NEGOCIO FechamentoCaixaEnxuto:
-    estrutura FechamentoDados:
-        estabelecimento: TEXTO
-        operador: TEXTO
-        trocoInicial: DECIMAL(12, 2)
-        vendasDinheiro: DECIMAL(12, 2)
-        vendasCartao: DECIMAL(12, 2)
-        vendasPix: DECIMAL(12, 2)
-        sangrias: DECIMAL(12, 2)
-        gavetaContada: DECIMAL(12, 2)
-
     regra AuditoriaCaixa:
-        exige dados.trocoInicial >= 0.00
-        exige dados.vendasDinheiro >= 0.00
-        exige dados.gavetaContada >= 0.00
+        operacao calcularSaldoEsperado(trocoInicial: DECIMAL(12, 2), vendasDinheiro: DECIMAL(12, 2), sangrias: DECIMAL(12, 2)) -> DECIMAL(12, 2):
+            retorne (trocoInicial + vendasDinheiro) - sangrias
 
-        operacao calcularSaldoEsperado(dados: FechamentoDados) -> DECIMAL(12, 2):
-            retorne (dados.trocoInicial + dados.vendasDinheiro) - dados.sangrias
-
-        operacao calcularQuebra(dados: FechamentoDados) -> DECIMAL(12, 2):
-            esperado := calcularSaldoEsperado(dados)
-            retorne dados.gavetaContada - esperado
+        operacao calcularQuebra(gavetaContada: DECIMAL(12, 2), saldoEsperado: DECIMAL(12, 2)) -> DECIMAL(12, 2):
+            retorne gavetaContada - saldoEsperado
 
     procedimento Principal():
-        exiba "Fechamento de Caixa Enxuto validado com sucesso!"
+        trocoInicial := 100.00
+        vendasDinheiro := 450.00
+        sangrias := 200.00
+        gavetaContada := 350.00
+
+        saldoEsperado := AuditoriaCaixa.calcularSaldoEsperado(trocoInicial, vendasDinheiro, sangrias)
+        diferencaQuebra := AuditoriaCaixa.calcularQuebra(gavetaContada, saldoEsperado)
+
+        exiba "================================================"
+        exiba "   FECHAMENTO DE CAIXA ENXUTO (AUDITORIA REAL)  "
+        exiba "================================================"
+        exiba "Fundo de Troco Inicial : R$ " + trocoInicial
+        exiba "Vendas em Dinheiro     : R$ " + vendasDinheiro
+        exiba "Sangrias / Retiradas   : R$ " + sangrias
+        exiba "------------------------------------------------"
+        exiba "Saldo Esperado Gaveta  : R$ " + saldoEsperado
+        exiba "Dinheiro Contado       : R$ " + gavetaContada
+        exiba "Diferenca de Caixa     : R$ " + diferencaQuebra
+
+        se diferencaQuebra == 0.00:
+            exiba "Situacao: EXATO (SEM DIFERENCA)"
+        senao:
+            se diferencaQuebra > 0.00:
+                exiba "Situacao: SOBRA DE CAIXA (+)"
+            senao:
+                exiba "Situacao: FALTA / QUEBRA DE CAIXA (-)"
+        exiba "================================================"

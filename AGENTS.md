@@ -47,5 +47,7 @@ thermal-probe/
    - Mantenha a separação entre comandos IPC no Rust (`src-tauri`) e o frontend React.
    - Estilização moderna com Tailwind/CSS limpo, dark mode e responsividade.
 4. **Consulta às Regras e Habilidades:**
-   - Consulte [`.agents/rules/`](./.agents/rules/) para diretrizes específicas de Rust, Tauri e Hardware.
+   - Consulte [`.agents/rules/`](./.agents/rules/) para diretrizes específicas de Rust, Tauri, Hardware e Governança.
    - Consulte [`.agents/skills/`](./.agents/skills/) para checagem de comandos ESC/POS e operações de diagnóstico.
+5. **Fluxo Git por Feature Branches & Pull Requests:**
+   - Qualquer nova funcionalidade, alteração de comportamento ou patch enviado aos repositórios remotos (`thermal-probe` ou `THZ-Lang/*`) deve ser submetido via **branches de feature dedicadas** e formalizado através de **Pull Requests no GitHub** para auditoria e revisão formal (consulte [`.agents/rules/git-workflow-prs.md`](./.agents/rules/git-workflow-prs.md)).

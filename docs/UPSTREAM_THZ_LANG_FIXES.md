@@ -4,6 +4,17 @@ Este documento registra com precisão cirúrgica todas as correções identifica
 
 ---
 
+## 🚀 Pull Requests Oficiais Abertos no GitHub
+
+| Repositório | PR | Branch | Status | Resumo |
+| :--- | :---: | :---: | :---: | :--- |
+| **`thz-runtime-rs`** | **[#1](https://github.com/THZ-Lang/thz-runtime-rs/pull/1)** | `feat/hardware-transport-cabi` | **OPEN** | Transporte de hardware driverless (Win32 `usbprint.sys`, COM/Bluetooth) e C-ABI de strings/decimais. |
+| **`thz-core-jvm`** | **[#1](https://github.com/THZ-Lang/thz-core-jvm/pull/1)** | `feat/llvm-ir-opaque-pointers-and-decimal` | **OPEN** | Suporte a opaque pointers LLVM 15+, promoção `i128` (ISO-10967) e lowering de stdlib `TEXTO.*`. |
+| **`thz-vscode`** | **[#1](https://github.com/THZ-Lang/thz-vscode/pull/1)** | `feat/modern-syntax-grammar-and-config` | **OPEN** | Suporte na gramática TextMate à sintaxe moderna enxuta (`:=`, `->`, `campo: TIPO`, palavras-chave minúsculas, etc.). |
+| **`thz-config-backup`** | **[#1](https://github.com/THZ-Lang/thz-config-backup/pull/1)** | `feat/backup-restore-tooling` | **OPEN** | Ferramenta oficial para backup auditável em Markdown e restauração automática do diretório de configurações dos agentes. |
+
+---
+
 ## 1. `thz-core-jvm` — Assinaturas Semânticas da Stdlib (`FATIA.*`)
 
 ### Arquivo
@@ -122,3 +133,64 @@ Ao invés de exibir a mensagem amigável com a linha e coluna do erro sintático
          boolean ehArquivoUi = arquivo.toLowerCase().endsWith(".thzui")
                  || (ast.tipoModulo() == thz.lang.ast.TipoModulo.TELA)
 ```
+
+---
+
+## 4. `thz-core-jvm` — Emissor LLVM IR AOT (`GeradorIr.java`)
+
+### Arquivo
+`toolchain/thz-core-jvm/src/main/java/thz/lang/ir/GeradorIr.java`
+
+### Problemas Identificados e Corrigidos
+1. **Opaque Pointer Type Mismatch (`store ptr 0`):**
+   - O LLVM 15+ rejeita `store ptr 0, ptr %var` com o erro:
+     `error: integer/byte constant must have integer/byte type`.
+   - **Correção:** Quando o tipo é `ptr`, inicializações e retornos numéricos `0` ou vazios são emitidos como `null` (`store ptr null, ptr %var` e `ret ptr null`).
+2. **Lowering de `ExprAst.CriarRegistro` e `ExprAst.Nulo`:**
+   - Anteriormente caíam no `default` retornando `("0", "i64")`.
+   - **Correção:** `ExprAst.Nulo` emite `("null", "ptr")`; `ExprAst.CriarRegistro` aloca o tipo estruturado `%struct.<Nome>` e retorna seu ponteiro.
+3. **Concatenação de Strings (`thz_str_concat`):**
+   - Em operações binárias com `ptr`, o emissor tentava emitir `add ptr %a, %b`, inválido no LLVM.
+   - **Correção:** Declarada e invocada a função nativa `@thz_str_concat(ptr %a, ptr %b)`.
+4. **Promoção Aritmética e Decimal ISO-10967 (`i128`):**
+   - Expressões binárias promoviam apenas entre `i32` e `i64`. Variáveis do tipo `DECIMAL` (`i128`) recebiam atribuições incompatíveis com `i64`.
+   - **Correção:** Adicionada promoção com extensão de sinal `sext` para `i128` em `OpBinaria`, `DeclVariavel` e `Atribuicao`.
+5. **Resolução de Operações Qualificadas e Membros de Enum:**
+   - Chamadas entre operações da mesma regra (`calcularSaldoEsperado`) e membros diretos de enumerações (`PIX_INSTANTANEO`) emitiam registradores SSA indefinidos (ex: `%PIX_INSTANTANEO`).
+   - **Correção:** Resolvido o prefixo da regra e emitido o ordinal `i32` do membro enum.
+6. **Stdlib de Texto e UI Nativa:**
+   - Adicionadas declarações de runtime e mapeamentos para:
+     - `TEXTO.subtexto` -> `@thz_substring`
+     - `TEXTO.comprimento` -> `@thz_tamanho_str`
+     - `TEXTO.deDecimal` -> `@thz_decimal_para_str`
+     - `TEXTO.deInteiro` -> `@thz_i64_para_str`
+     - `TELA.renderizarFormulario` -> `@thz_tela_renderizar_formulario`
+
+---
+
+## 5. `thz-runtime-rs` — Módulo de Transporte de Hardware C-ABI e Strings
+
+### Arquivos
+- `toolchain/thz-runtime-rs/src/hardware.rs`
+- `toolchain/thz-runtime-rs/src/lib.rs`
+- `toolchain/thz-runtime-rs/Cargo.toml`
+
+### Melhorias Implementadas
+1. **Transporte Driverless Win32 sem Spooler:**
+   - `thz_hardware_usb_enviar(caminho, payload, len)`: Acesso direto via Win32 descritor USB (`usbprint.sys`).
+   - `thz_hardware_com_enviar(porta, baud, payload, len)`: Acesso serial direkt COM / Bluetooth SPP via `serialport` com flush síncrono e timeout de 10s.
+   - `thz_hardware_descobrir_dispositivos(buffer, max_len)`: Enumeração serial de portas disponíveis em JSON.
+   - `thz_hardware_imprimir_cupom(tipo, destino, payload, len)`: Roteamento direto USB vs COM/Bluetooth.
+2. **Funções de Suporte a Strings e Decimal:**
+   - `thz_str_concat(a, b)`: Concatenação segura de C-strings.
+   - `thz_decimal_para_str(val, scale)`: Formatação com precisão arbitrária decimal sem perdas de ponto flutuante.
+   - `thz_i64_para_str(val)`: Conversão de inteiro para C-string.
+   - `thz_tela_renderizar_formulario(form, titulo)`: Stub de ponte para renderização de telas declarativas.
+
+---
+
+## 6. Scripts Oficiais de Bootstrap e Compilação
+
+### Arquivos
+- `scripts/bootstrap-selfhost.ps1`: Executa o pipeline de bootstrap em 3 estágios com verificação de identidade de hash SHA-256 entre Stage 1 e Stage 2.
+- `thzc.ps1` e `thzc.cmd`: Compilador nativo independente AOT. Transforma arquivos `.thz` diretamente em `.exe` nativos usando o compilador e a THZVM nativa.

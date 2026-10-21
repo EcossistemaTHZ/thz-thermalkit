@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import {
   StoreProfileDto,
@@ -210,12 +211,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  return (
-    <div className="modal-backdrop" style={{ zIndex: 9998 }}>
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return createPortal(
+    <div className="modal-backdrop" onClick={onClose} style={{ zIndex: 99998 }}>
       <div
         className="modal-box"
+        onClick={(e) => e.stopPropagation()}
         style={{
-          maxWidth: '900px',
+          maxWidth: '920px',
           width: '95%',
           maxHeight: '90vh',
           display: 'flex',
@@ -860,6 +873,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

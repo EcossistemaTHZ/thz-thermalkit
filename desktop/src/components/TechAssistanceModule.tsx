@@ -29,6 +29,7 @@ import {
   Check,
   ChevronRight
 } from 'lucide-react';
+import { ModalDialog } from './ModalDialog';
 
 interface TechAssistanceModuleProps {
   widthDots: number;
@@ -541,20 +542,14 @@ export const TechAssistanceModule: React.FC<TechAssistanceModuleProps> = ({
       </div>
 
       {/* MODAL 1: Abertura de Nova O.S. (Triagem de Entrada) */}
-      {isNewOrderModalOpen && (
-        <div className="modal-backdrop" style={{ zIndex: 9999 }}>
-          <div className="modal-box" style={{ maxWidth: '780px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Wrench size={18} color="var(--accent-usb)" />
-                <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#fff' }}>Abertura de Ordem de Serviço (Triagem de Entrada)</h3>
-              </div>
-              <button className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsNewOrderModalOpen(false)}>
-                <X size={16} />
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <ModalDialog
+        isOpen={isNewOrderModalOpen}
+        onClose={() => setIsNewOrderModalOpen(false)}
+        title="Abertura de Ordem de Serviço (Triagem de Entrada)"
+        icon={<Wrench size={18} color="var(--accent-usb)" />}
+        maxWidth="820px"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '6px' }}>
               {/* Cliente */}
               <div>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Vincular Cliente *</span>
@@ -730,70 +725,65 @@ export const TechAssistanceModule: React.FC<TechAssistanceModuleProps> = ({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+      </ModalDialog>
 
       {/* MODAL 2: Gestão de Bancada, Peças, Laudo e Faturamento da O.S. */}
-      {isDetailsModalOpen && activeOrderDetails && (
-        <div className="modal-backdrop" style={{ zIndex: 9999 }}>
-          <div className="modal-box" style={{ maxWidth: '850px', width: '95%', maxHeight: '92vh', overflowY: 'auto' }}>
-            {/* Header da Bancada */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '14px' }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fff' }}>
-                    Ordem de Serviço #{activeOrderDetails.order.order_number}
-                  </h3>
-                  <span
-                    style={{
-                      padding: '3px 10px',
-                      borderRadius: '12px',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      background: STATUS_CONFIG[activeOrderDetails.order.status].bg,
-                      color: STATUS_CONFIG[activeOrderDetails.order.status].color,
-                    }}
-                  >
-                    {STATUS_CONFIG[activeOrderDetails.order.status].label}
-                  </span>
-                </div>
-                <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  {activeOrderDetails.order.brand_model} • Cliente: {activeOrderDetails.client?.name || 'Consumidor Balcão'}
-                </p>
-              </div>
-
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <button
-                  className="btn-secondary"
-                  onClick={handleSendWhatsApp}
-                  title="Enviar mensagem de status para o cliente no WhatsApp"
-                  style={{ color: '#22c55e', borderColor: 'rgba(34, 197, 94, 0.4)' }}
-                >
-                  <Share2 size={14} />
-                  <span>WhatsApp</span>
-                </button>
-                <button
-                  className="btn-secondary"
-                  onClick={handlePrintEntryTicket}
-                  title="Reimprimir Comprovante de Entrada com Canhoto"
-                >
-                  <Printer size={14} />
-                  <span>Entrada 58mm</span>
-                </button>
-                <button
-                  className="btn-primary usb"
-                  onClick={handlePrintFinalTicket}
-                  title="Imprimir Comprovante de Saída e Termo de Garantia CDC"
-                >
-                  <Printer size={14} />
-                  <span>Saída / Garantia</span>
-                </button>
-                <button className="btn-secondary" style={{ padding: '6px' }} onClick={() => setIsDetailsModalOpen(false)}>
-                  <X size={16} />
-                </button>
-              </div>
+      {activeOrderDetails && (
+        <ModalDialog
+          isOpen={isDetailsModalOpen}
+          onClose={() => setIsDetailsModalOpen(false)}
+          title={`Ordem de Serviço #${activeOrderDetails.order.order_number}`}
+          icon={<Wrench size={18} color="var(--accent-usb)" />}
+          maxWidth="920px"
+          headerActions={
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <span
+                style={{
+                  padding: '3px 10px',
+                  borderRadius: '12px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  background: STATUS_CONFIG[activeOrderDetails.order.status].bg,
+                  color: STATUS_CONFIG[activeOrderDetails.order.status].color,
+                }}
+              >
+                {STATUS_CONFIG[activeOrderDetails.order.status].label}
+              </span>
+              <button
+                className="btn-secondary"
+                onClick={handleSendWhatsApp}
+                title="Enviar mensagem de status para o cliente no WhatsApp"
+                style={{ color: '#22c55e', borderColor: 'rgba(34, 197, 94, 0.4)', padding: '5px 8px', fontSize: '0.75rem', gap: '4px' }}
+              >
+                <Share2 size={13} />
+                <span>WhatsApp</span>
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={handlePrintEntryTicket}
+                title="Reimprimir Comprovante de Entrada com Canhoto"
+                style={{ padding: '5px 8px', fontSize: '0.75rem', gap: '4px' }}
+              >
+                <Printer size={13} />
+                <span>Entrada 58mm</span>
+              </button>
+              <button
+                className="btn-primary usb"
+                onClick={handlePrintFinalTicket}
+                title="Imprimir Comprovante de Saída e Termo de Garantia CDC"
+                style={{ padding: '5px 8px', fontSize: '0.75rem', gap: '4px' }}
+              >
+                <Printer size={13} />
+                <span>Saída / Garantia</span>
+              </button>
             </div>
+          }
+        >
+          <div style={{ marginBottom: '10px' }}>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              {activeOrderDetails.order.brand_model} • Cliente: {activeOrderDetails.client?.name || 'Consumidor Balcão'}
+            </p>
+          </div>
 
             {/* Mudar Status da O.S. (Pipeline) */}
             <div style={{ background: '#090d16', padding: '10px 14px', borderRadius: '6px', border: '1px solid var(--border-color)', marginBottom: '14px' }}>
@@ -1042,8 +1032,7 @@ export const TechAssistanceModule: React.FC<TechAssistanceModuleProps> = ({
                 <span>Salvar Alterações da Bancada</span>
               </button>
             </div>
-          </div>
-        </div>
+        </ModalDialog>
       )}
     </div>
   );
