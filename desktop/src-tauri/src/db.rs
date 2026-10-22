@@ -272,23 +272,59 @@ pub struct CashSummary {
 // Inicialização e Conexão com SQLite
 // ============================================================================
 
+use std::sync::OnceLock;
+
+static CUSTOM_APP_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Define o diretório de dados da aplicação fornecido pelo runtime (Tauri app_data_dir)
+pub fn set_app_data_dir(path: PathBuf) {
+    let _ = CUSTOM_APP_DATA_DIR.set(path);
+}
+
 /// Retorna o caminho do banco de dados na pasta local do app
 pub fn get_db_path() -> PathBuf {
     let base_dir = dirs_or_local();
     let data_dir = base_dir.join("thz-thermalkit").join("data");
-    if !data_dir.exists() {
-        let _ = fs::create_dir_all(&data_dir);
+    if let Err(e) = fs::create_dir_all(&data_dir) {
+        eprintln!("Falha ao criar data_dir {:?}: {e}, usando base_dir direto", data_dir);
+        if fs::create_dir_all(&base_dir).is_ok() {
+            return base_dir.join("app.db");
+        }
+        let fallback_dir = std::env::temp_dir().join("thz-thermalkit").join("data");
+        let _ = fs::create_dir_all(&fallback_dir);
+        return fallback_dir.join("app.db");
     }
     data_dir.join("app.db")
 }
 
 fn dirs_or_local() -> PathBuf {
+    if let Some(custom) = CUSTOM_APP_DATA_DIR.get() {
+        return custom.clone();
+    }
+
+    #[cfg(target_os = "android")]
+    {
+        let candidates = [
+            PathBuf::from("/data/user/0/com.ecossistemathz.thermalkit/files"),
+            PathBuf::from("/data/data/com.ecossistemathz.thermalkit/files"),
+            PathBuf::from("/data/user/0/com.ecossistemathz.thermalkit"),
+            PathBuf::from("/data/data/com.ecossistemathz.thermalkit"),
+        ];
+        for c in &candidates {
+            if fs::create_dir_all(c).is_ok() {
+                return c.clone();
+            }
+        }
+    }
+
     if let Ok(app_data) = std::env::var("APPDATA") {
         PathBuf::from(app_data)
     } else if let Ok(home) = std::env::var("USERPROFILE") {
         PathBuf::from(home)
+    } else if let Ok(home) = std::env::var("HOME") {
+        PathBuf::from(home)
     } else {
-        PathBuf::from(".")
+        std::env::temp_dir()
     }
 }
 
@@ -365,6 +401,13 @@ pub fn open_connection() -> Result<Connection, rusqlite::Error> {
             payment_method TEXT,
             raw_text TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- Tabela de Sequenciamento Monotônico com Memória Persistida
+        CREATE TABLE IF NOT EXISTS app_sequences (
+            sequence_name TEXT PRIMARY KEY,
+            last_value INTEGER NOT NULL DEFAULT 1000,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
         -- ====================================================================
@@ -485,6 +528,46 @@ pub fn open_connection() -> Result<Connection, rusqlite::Error> {
     let _ = conn.execute("ALTER TABLE store_profile ADD COLUMN tech_warranty_terms TEXT", []);
     let _ = conn.execute("ALTER TABLE store_profile ADD COLUMN tech_abandonment_terms TEXT", []);
     let _ = conn.execute("ALTER TABLE store_profile ADD COLUMN tech_default_warranty_days INTEGER DEFAULT 90", []);
+
+    // Inicialização da tabela app_sequences e sementes seguras
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS app_sequences (
+            sequence_name TEXT PRIMARY KEY,
+            last_value INTEGER NOT NULL DEFAULT 1000,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
+    );
+
+    // Se já existem technical_orders, o last_value inicial deve ser >= ao maior número existente
+    let max_os: i64 = conn
+        .query_row(
+            "SELECT IFNULL(MAX(CAST(order_number AS INTEGER)), 1000) FROM technical_orders WHERE order_number GLOB '[0-9]*'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(1000);
+    let init_os_seq = std::cmp::max(max_os, 1000);
+
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO app_sequences (sequence_name, last_value) VALUES ('tech_order', ?1)",
+        params![init_os_seq],
+    );
+
+    // Se já existem receipt_history, o last_value inicial deve ser >= ao maior número existente
+    let max_receipt: i64 = conn
+        .query_row(
+            "SELECT IFNULL(MAX(CAST(order_number AS INTEGER)), 1000) FROM receipt_history WHERE order_number GLOB '[0-9]*'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(1000);
+    let init_receipt_seq = std::cmp::max(max_receipt, 1000);
+
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO app_sequences (sequence_name, last_value) VALUES ('pos_receipt', ?1)",
+        params![init_receipt_seq],
+    );
 
     // Insere app_config inicial se não existir
     let count: i64 = conn.query_row(
@@ -1398,6 +1481,80 @@ pub fn get_technical_order_db(id: i64) -> Result<TechnicalOrderWithDetails, Stri
     Ok(TechnicalOrderWithDetails { order, client, items })
 }
 
+// ============================================================================
+// Sequenciador Monotônico com Saltos Aleatórios & Memória Persistente (O.S. e PDV)
+// ============================================================================
+
+/// Gera um salto pseudo-aleatório seguro (1..5) baseado no relógio do sistema em nanos
+fn generate_sequence_step(min_step: u32, max_step: u32) -> i64 {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let nanos = now.as_nanos();
+    let range = (max_step - min_step + 1) as u128;
+    let step = (nanos % range) as u32 + min_step;
+    step as i64
+}
+
+/// Incrementa de forma atômica e retorna o próximo número da sequência na transação.
+/// Sempre cresce (estritamente monotônico crescente, logo nunca se repete).
+pub fn generate_next_sequence_tx(
+    tx: &rusqlite::Transaction,
+    sequence_name: &str,
+) -> Result<String, String> {
+    let current_val: Option<i64> = tx
+        .query_row(
+            "SELECT last_value FROM app_sequences WHERE sequence_name = ?1",
+            params![sequence_name],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    let base_val = current_val.unwrap_or(1000);
+    let step = generate_sequence_step(1, 5);
+    let next_val = base_val + step;
+
+    tx.execute(
+        "INSERT INTO app_sequences (sequence_name, last_value, updated_at)
+         VALUES (?1, ?2, CURRENT_TIMESTAMP)
+         ON CONFLICT(sequence_name) DO UPDATE SET
+            last_value = ?2,
+            updated_at = CURRENT_TIMESTAMP",
+        params![sequence_name, next_val],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(format!("{:04}", next_val))
+}
+
+/// Incrementa e retorna o próximo número da sequência com memória permanente no SQLite.
+pub fn get_next_sequence_db(sequence_name: &str) -> Result<String, String> {
+    let mut conn = open_connection().map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let next_str = generate_next_sequence_tx(&tx, sequence_name)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(next_str)
+}
+
+/// Consulta o número atual da sequência ou inicializa se ainda não existir.
+pub fn get_current_sequence_db(sequence_name: &str) -> Result<String, String> {
+    let conn = open_connection().map_err(|e| e.to_string())?;
+    let current_val: Option<i64> = conn
+        .query_row(
+            "SELECT last_value FROM app_sequences WHERE sequence_name = ?1",
+            params![sequence_name],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    match current_val {
+        Some(v) => Ok(format!("{:04}", v)),
+        None => get_next_sequence_db(sequence_name),
+    }
+}
+
 pub fn save_technical_order_db(
     mut order: TechnicalOrder,
     items: Vec<OrderItem>,
@@ -1444,12 +1601,9 @@ pub fn save_technical_order_db(
 
         id
     } else {
-        // Se order_number for vazio, gera sequencial
+        // Se order_number for vazio, gera sequencial monotônico com salto aleatório e memória permanente
         if order.order_number.trim().is_empty() {
-            let next_num: i64 = tx
-                .query_row("SELECT IFNULL(MAX(id), 0) + 1 FROM technical_orders", [], |r| r.get(0))
-                .unwrap_or(1);
-            order.order_number = format!("{:04}", next_num);
+            order.order_number = generate_next_sequence_tx(&tx, "tech_order")?;
         }
 
         tx.execute(

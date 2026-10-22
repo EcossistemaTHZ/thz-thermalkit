@@ -1,5 +1,3 @@
-#![cfg(windows)]
-
 //! # thermal-core
 //!
 //! Biblioteca central de comunicação e protocolo do ecossistema THZ ThermalKit.
@@ -8,18 +6,19 @@
 
 use image::{imageops::FilterType, DynamicImage, GrayImage, Luma};
 use serde::{Deserialize, Serialize};
-use std::{
-    ffi::c_void,
-    fs::OpenOptions,
-    io::{self, Write},
-    mem, ptr,
-    time::Duration,
-};
+use std::io;
+
+#[cfg(any(windows, feature = "serial"))]
+use std::{io::Write, time::Duration};
+
+#[cfg(windows)]
+use std::{ffi::c_void, fs::OpenOptions, mem, ptr};
 
 // ============================================================================
-// Estruturas e Constantes da Windows SetupAPI
+// Estruturas e Constantes da Windows SetupAPI (Win32 Only)
 // ============================================================================
 
+#[cfg(windows)]
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct Guid {
@@ -29,6 +28,7 @@ pub struct Guid {
     pub d: [u8; 8],
 }
 
+#[cfg(windows)]
 pub const USBPRINT: Guid = Guid {
     a: 0x28d78fad,
     b: 0x5a12,
@@ -36,6 +36,7 @@ pub const USBPRINT: Guid = Guid {
     d: [0xae, 0x5b, 0, 0, 0xf8, 0x03, 0xa8, 0xc2],
 };
 
+#[cfg(windows)]
 pub const COMPORT: Guid = Guid {
     a: 0x86e0d1e0,
     b: 0x8089,
@@ -43,6 +44,7 @@ pub const COMPORT: Guid = Guid {
     d: [0x9c, 0xe4, 0x08, 0, 0x3e, 0x30, 0x1f, 0x73],
 };
 
+#[cfg(windows)]
 pub const USB_DEVICE: Guid = Guid {
     a: 0xa5dcbf10,
     b: 0x6530,
@@ -50,11 +52,16 @@ pub const USB_DEVICE: Guid = Guid {
     d: [0x90, 0x1f, 0, 0xc0, 0x4f, 0xb9, 0x51, 0xed],
 };
 
+#[cfg(windows)]
 pub const PRESENT_INTERFACE: u32 = 0x12;
+#[cfg(windows)]
 pub const FRIENDLY_NAME: u32 = 12;
+#[cfg(windows)]
 pub const HARDWARE_ID: u32 = 1;
+#[cfg(windows)]
 pub const DEVICE_DESC: u32 = 0;
 
+#[cfg(windows)]
 #[repr(C)]
 pub struct InterfaceData {
     pub size: u32,
@@ -63,6 +70,7 @@ pub struct InterfaceData {
     pub reserved: usize,
 }
 
+#[cfg(windows)]
 #[repr(C)]
 pub struct DeviceData {
     pub size: u32,
@@ -71,6 +79,7 @@ pub struct DeviceData {
     pub reserved: usize,
 }
 
+#[cfg(windows)]
 #[link(name = "setupapi")]
 extern "system" {
     pub fn SetupDiGetClassDevsW(
@@ -181,10 +190,12 @@ pub fn default_code_page() -> u8 {
 // Utilitários de Descoberta Win32
 // ============================================================================
 
+#[cfg(windows)]
 pub fn wide_z(data: &[u16]) -> String {
     String::from_utf16_lossy(&data[..data.iter().position(|&x| x == 0).unwrap_or(data.len())])
 }
 
+#[cfg(windows)]
 pub unsafe fn property(set: isize, dev: &DeviceData, key: u32) -> String {
     let mut bytes = [0u8; 4096];
     let mut kind = 0;
@@ -230,6 +241,7 @@ pub fn vid_pid(d: &Device) -> (Option<String>, Option<String>) {
     (field(&ids, "VID_"), field(&ids, "PID_"))
 }
 
+#[cfg(windows)]
 pub fn enumerate(class: &Guid, base_transport: &'static str) -> io::Result<Vec<Device>> {
     let mut found = Vec::new();
     unsafe {
@@ -351,6 +363,7 @@ pub fn enumerate(class: &Guid, base_transport: &'static str) -> io::Result<Vec<D
     Ok(found)
 }
 
+#[cfg(windows)]
 pub fn all_devices() -> Vec<Device> {
     let mut out = Vec::new();
     for (class, label) in [
@@ -366,6 +379,12 @@ pub fn all_devices() -> Vec<Device> {
     out
 }
 
+#[cfg(not(windows))]
+pub fn all_devices() -> Vec<Device> {
+    Vec::new()
+}
+
+#[cfg(windows)]
 pub fn discover_printers() -> Vec<DiscoveredPrinter> {
     let devices = all_devices();
     let mut printers = Vec::new();
@@ -428,6 +447,11 @@ pub fn discover_printers() -> Vec<DiscoveredPrinter> {
         }
     }
     printers
+}
+
+#[cfg(not(windows))]
+pub fn discover_printers() -> Vec<DiscoveredPrinter> {
+    Vec::new()
 }
 
 // ============================================================================
@@ -571,6 +595,7 @@ pub fn test_pattern(width: u32) -> Vec<u8> {
     out
 }
 
+#[cfg(all(windows, feature = "serial"))]
 pub fn write_payload(transport: &ActiveTransport, bytes: &[u8]) -> io::Result<()> {
     match transport {
         ActiveTransport::Usb(path) => {
@@ -587,4 +612,24 @@ pub fn write_payload(transport: &ActiveTransport, bytes: &[u8]) -> io::Result<()
             port.flush()
         }
     }
+}
+
+#[cfg(all(windows, not(feature = "serial")))]
+pub fn write_payload(transport: &ActiveTransport, bytes: &[u8]) -> io::Result<()> {
+    match transport {
+        ActiveTransport::Usb(path) => {
+            let mut file = OpenOptions::new().write(true).open(path)?;
+            file.write_all(bytes)?;
+            file.flush()
+        }
+        ActiveTransport::Com { .. } => {
+            Err(io::Error::new(io::ErrorKind::Unsupported, "Serial transport not compiled"))
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn write_payload(_transport: &ActiveTransport, _bytes: &[u8]) -> io::Result<()> {
+    // No Android / Linux o canal de escrita é delegado ao transporte nativo
+    Ok(())
 }

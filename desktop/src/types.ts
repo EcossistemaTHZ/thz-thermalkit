@@ -3,7 +3,7 @@ export interface PrinterDto {
   display_info: string;
   is_bluetooth: boolean;
   port: string | null;
-  transport_type: 'usb' | 'com';
+  transport_type: 'usb' | 'com' | 'bluetooth';
   target: string;
 }
 

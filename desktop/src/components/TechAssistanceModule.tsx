@@ -117,6 +117,8 @@ export const TechAssistanceModule: React.FC<TechAssistanceModuleProps> = ({
   // Modal de Detalhes / Bancada da O.S.
   const [activeOrderDetails, setActiveOrderDetails] = useState<TechnicalOrderWithDetailsDto | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isSubmittingNewOrder, setIsSubmittingNewOrder] = useState(false);
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
 
   // Estado para adicionar peças/serviços na O.S.
   const [selectedItemType, setSelectedItemType] = useState<'product' | 'service'>('service');
@@ -159,18 +161,48 @@ export const TechAssistanceModule: React.FC<TechAssistanceModuleProps> = ({
     loadAuxiliaryData();
   }, [loadOrders, loadAuxiliaryData]);
 
+  // Abrir Modal de Nova O.S. com numeração sequencial monotônica e saltos aleatórios (SQLite)
+  const handleOpenNewOrderModal = async () => {
+    try {
+      const nextSeq = await invoke<string>('get_next_sequence', { sequenceName: 'tech_order' });
+      setNewOrder((prev) => ({
+        ...prev,
+        order_number: nextSeq,
+        equipment_type: 'smartphone',
+        brand_model: '',
+        serial_imei: '',
+        device_password: '',
+        accessories: '',
+        physical_condition: '',
+        reported_defect: '',
+        status: 'ORCAMENTO',
+        warranty_days: storeProfile.tech_default_warranty_days || 90,
+        discount_cents: 0,
+        total_cents: 0,
+        notes: '',
+      }));
+    } catch (err) {
+      console.error('Falha ao obter sequência de O.S.:', err);
+    }
+    setCheckConditions([]);
+    setCheckAccessories([]);
+    setSelectedClientId(null);
+    setIsNewOrderModalOpen(true);
+  };
+
   // Salvar Nova O.S. (Entrada / Triagem)
   const handleCreateOrder = async (printImmediately: boolean = false) => {
     if (!newOrder.brand_model?.trim() || !newOrder.reported_defect?.trim()) {
       onNotification('error', 'Informe o modelo do aparelho e o defeito relatado.');
       return;
     }
+    setIsSubmittingNewOrder(true);
 
     const compiledConditions = checkConditions.join(', ');
     const compiledAccessories = checkAccessories.join(', ');
 
     const orderToSave: TechnicalOrderDto = {
-      order_number: '', // O backend gera sequencial automático se vazio
+      order_number: newOrder.order_number?.trim() || '', // Se vazio o backend gera atomicamente via SQLite
       client_id: selectedClientId,
       equipment_type: newOrder.equipment_type || 'smartphone',
       brand_model: newOrder.brand_model.trim(),
@@ -229,6 +261,8 @@ export const TechAssistanceModule: React.FC<TechAssistanceModuleProps> = ({
       loadOrders();
     } catch (err: any) {
       onNotification('error', `Erro ao abrir O.S.: ${String(err)}`);
+    } finally {
+      setIsSubmittingNewOrder(false);
     }
   };
 
@@ -329,6 +363,7 @@ export const TechAssistanceModule: React.FC<TechAssistanceModuleProps> = ({
   // Salvar Alterações na O.S. (Laudo, Itens, Desconto)
   const handleSaveOrderChanges = async () => {
     if (!activeOrderDetails?.order.id) return;
+    setIsSavingOrder(true);
     try {
       await invoke('save_technical_order', {
         order: activeOrderDetails.order,
@@ -338,6 +373,8 @@ export const TechAssistanceModule: React.FC<TechAssistanceModuleProps> = ({
       loadOrders();
     } catch (err: any) {
       onNotification('error', `Erro ao salvar O.S.: ${String(err)}`);
+    } finally {
+      setIsSavingOrder(false);
     }
   };
 
@@ -439,7 +476,7 @@ export const TechAssistanceModule: React.FC<TechAssistanceModuleProps> = ({
 
           <button
             className="btn-primary usb"
-            onClick={() => setIsNewOrderModalOpen(true)}
+            onClick={handleOpenNewOrderModal}
             style={{ padding: '8px 14px', fontSize: '0.82rem', gap: '6px' }}
           >
             <Plus size={15} />
@@ -545,11 +582,19 @@ export const TechAssistanceModule: React.FC<TechAssistanceModuleProps> = ({
       <ModalDialog
         isOpen={isNewOrderModalOpen}
         onClose={() => setIsNewOrderModalOpen(false)}
-        title="Abertura de Ordem de Serviço (Triagem de Entrada)"
+        title={newOrder.order_number ? `Nova Ordem de Serviço #${newOrder.order_number}` : 'Abertura de Ordem de Serviço (Triagem)'}
         icon={<Wrench size={18} color="var(--accent-usb)" />}
         maxWidth="820px"
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(16, 185, 129, 0.08)', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+            <span style={{ fontSize: '0.82rem', color: '#fff' }}>
+              Nº sequencial exclusivo com memória no SQLite: <strong>#{newOrder.order_number || 'Auto'}</strong>
+            </span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--accent-usb)', fontWeight: 600 }}>
+              GARANTIA DE NÃO REPETIÇÃO
+            </span>
+          </div>
               {/* Cliente */}
               <div>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Vincular Cliente *</span>
@@ -710,18 +755,20 @@ export const TechAssistanceModule: React.FC<TechAssistanceModuleProps> = ({
                 <button
                   type="button"
                   className="btn-secondary"
+                  disabled={isSubmittingNewOrder}
                   onClick={() => handleCreateOrder(false)}
                 >
-                  Salvar Apenas
+                  {isSubmittingNewOrder ? 'Salvando...' : 'Salvar Apenas'}
                 </button>
                 <button
                   type="button"
                   className="btn-primary usb"
+                  disabled={isSubmittingNewOrder}
                   onClick={() => handleCreateOrder(true)}
                   style={{ gap: '6px' }}
                 >
                   <Printer size={15} />
-                  <span>Salvar e Imprimir Entrada (58mm)</span>
+                  <span>{isSubmittingNewOrder ? 'Processando...' : 'Salvar e Imprimir Entrada (58mm)'}</span>
                 </button>
               </div>
             </div>
@@ -1025,11 +1072,12 @@ export const TechAssistanceModule: React.FC<TechAssistanceModuleProps> = ({
               <button
                 type="button"
                 className="btn-primary usb"
+                disabled={isSavingOrder}
                 onClick={handleSaveOrderChanges}
                 style={{ gap: '6px' }}
               >
                 <Check size={14} />
-                <span>Salvar Alterações da Bancada</span>
+                <span>{isSavingOrder ? 'Salvando Alterações...' : 'Salvar Alterações da Bancada'}</span>
               </button>
             </div>
         </ModalDialog>

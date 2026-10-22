@@ -42,6 +42,14 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
 
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mobileTab, setMobileTab] = useState<'form' | 'preview'>('form');
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 850);
+
+  React.useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 850);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Prévia da bobina térmica em tempo real (32 colunas / 58 mm)
   const virtualPreview = useMemo(() => {
@@ -95,7 +103,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '24px',
+        padding: isMobile ? '0' : '24px',
         boxSizing: 'border-box',
         background: 'var(--bg-main)',
         backgroundImage:
@@ -104,47 +112,54 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
       }}
     >
       <div
-        className="glass-panel"
+        className={isMobile ? '' : 'glass-panel'}
         style={{
           maxWidth: '1080px',
           width: '100%',
           height: '100%',
-          maxHeight: '880px',
+          maxHeight: isMobile ? '100%' : '880px',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08)',
+          borderRadius: isMobile ? '0' : 'var(--radius-lg)',
+          boxShadow: isMobile ? 'none' : '0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08)',
+          background: isMobile ? 'var(--bg-main)' : undefined,
         }}
       >
         {/* Cabeçalho de Boas-Vindas */}
         <div
           style={{
-            padding: '22px 28px',
+            padding: isMobile
+              ? 'calc(14px + max(env(safe-area-inset-top, 0px), 36px)) 16px 14px 16px'
+              : '22px 28px',
             borderBottom: '1px solid var(--border-subtle)',
             background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.14), rgba(16, 185, 129, 0.08))',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '10px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '10px' : '16px' }}>
             <div
               style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '14px',
+                width: isMobile ? '38px' : '48px',
+                height: isMobile ? '38px' : '48px',
+                borderRadius: '12px',
                 background: 'linear-gradient(135deg, #0284c7, #059669)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 boxShadow: '0 10px 20px -4px rgba(2, 132, 199, 0.5)',
+                flexShrink: 0,
               }}
             >
-              <Store size={26} color="#ffffff" />
+              <Store size={isMobile ? 20 : 26} color="#ffffff" />
             </div>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <h1 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.02em' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <h1 style={{ margin: 0, fontSize: isMobile ? '1.1rem' : '1.35rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.02em' }}>
                   Bem-vindo ao {appName}!
                 </h1>
                 <span
@@ -156,7 +171,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
                     borderRadius: '12px',
                     background: 'rgba(16, 185, 129, 0.18)',
                     border: '1px solid rgba(16, 185, 129, 0.35)',
-                    fontSize: '0.7rem',
+                    fontSize: '0.68rem',
                     fontWeight: 700,
                     color: '#6ee7b7',
                   }}
@@ -165,42 +180,84 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
                   Primeiro Acesso
                 </span>
               </div>
-              <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Configure os dados do seu negócio uma única vez. Eles serão usados no cabeçalho e rodapé de todas as impressões térmicas.
+              <p style={{ margin: '4px 0 0 0', fontSize: isMobile ? '0.75rem' : '0.85rem', color: 'var(--text-secondary)' }}>
+                Configure os dados do seu negócio uma única vez para seus comprovantes.
               </p>
             </div>
           </div>
 
-          <div
-            style={{
-              padding: '8px 16px',
-              borderRadius: '24px',
-              background: 'rgba(14, 165, 233, 0.15)',
-              border: '1px solid rgba(14, 165, 233, 0.3)',
-              fontSize: '0.75rem',
-              fontWeight: 800,
-              letterSpacing: '0.05em',
-              textTransform: 'uppercase',
-              color: '#38bdf8',
-            }}
-          >
-            Passo 1 de 1
-          </div>
+          {!isMobile && (
+            <div
+              style={{
+                padding: '8px 16px',
+                borderRadius: '24px',
+                background: 'rgba(14, 165, 233, 0.15)',
+                border: '1px solid rgba(14, 165, 233, 0.3)',
+                fontSize: '0.75rem',
+                fontWeight: 800,
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+                color: '#38bdf8',
+              }}
+            >
+              Passo 1 de 1
+            </div>
+          )}
         </div>
 
-        {/* Corpo: Formulário com scroll à esquerda + Bobina em tempo real à direita */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.25fr 0.95fr', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          {/* Lado Esquerdo: Formulário */}
-          <form
-            onSubmit={handleSubmit}
+        {/* Abas Mobile para alternar entre Formulário e Prévia */}
+        {isMobile && (
+          <div
             style={{
-              padding: '24px 28px',
-              overflowY: 'auto',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '20px',
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              padding: '8px 12px',
+              gap: '8px',
+              background: 'rgba(11, 18, 32, 0.95)',
+              borderBottom: '1px solid var(--border-subtle)',
             }}
           >
+            <button
+              type="button"
+              className={`btn-secondary ${mobileTab === 'form' ? 'active-toggle' : ''}`}
+              style={{ padding: '10px', fontSize: '0.82rem', justifyContent: 'center' }}
+              onClick={() => setMobileTab('form')}
+            >
+              📝 Dados do Negócio
+            </button>
+            <button
+              type="button"
+              className={`btn-secondary ${mobileTab === 'preview' ? 'active-toggle' : ''}`}
+              style={{ padding: '10px', fontSize: '0.82rem', justifyContent: 'center' }}
+              onClick={() => setMobileTab('preview')}
+            >
+              🖨️ Prévia da Bobina
+            </button>
+          </div>
+        )}
+
+        {/* Corpo: Formulário ou Bobina */}
+        <div style={{
+          display: isMobile ? 'flex' : 'grid',
+          gridTemplateColumns: isMobile ? undefined : '1.25fr 0.95fr',
+          flexDirection: isMobile ? 'column' : undefined,
+          flex: 1,
+          minHeight: 0,
+          overflow: 'hidden'
+        }}>
+          {/* Lado Esquerdo: Formulário */}
+          {(!isMobile || mobileTab === 'form') && (
+            <form
+              onSubmit={handleSubmit}
+              style={{
+                padding: isMobile ? '16px 14px 40px 14px' : '24px 28px',
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '20px',
+                flex: 1,
+              }}
+            >
             {error && (
               <div
                 style={{
@@ -261,7 +318,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
                   />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                   <div>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>CNPJ ou CPF *</span>
                     <input
@@ -325,7 +382,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
                 <Phone size={14} color="var(--accent-usb)" />
                 <span>Canais de Atendimento & Contato</span>
               </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                 <div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Telefone Fixo / Celular</span>
                   <input
@@ -407,7 +464,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
                 <MapPin size={14} color="#f59e0b" />
                 <span>Endereço Físico (Impresso no cabeçalho)</span>
               </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '3fr 1fr', gap: '12px' }}>
                 <div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Logradouro / Rua</span>
                   <input
@@ -450,7 +507,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px', marginTop: '12px' }}>
                 <div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Complemento</span>
                   <input
@@ -493,7 +550,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px', marginTop: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr 1fr', gap: '12px', marginTop: '12px' }}>
                 <div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Cidade</span>
                   <input
@@ -596,7 +653,14 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
             </div>
 
             {/* Botão de Conclusão */}
-            <div style={{ marginTop: '8px', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)' }}>
+            <div
+              style={{
+                marginTop: '8px',
+                paddingTop: '12px',
+                paddingBottom: isMobile ? 'max(env(safe-area-inset-bottom, 0px), 16px)' : undefined,
+                borderTop: '1px solid var(--border-subtle)',
+              }}
+            >
               <button
                 type="submit"
                 className="btn-primary usb"
@@ -617,75 +681,80 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
               </button>
             </div>
           </form>
+          )}
 
           {/* Lado Direito: Prévia ao Vivo na Bobina */}
-          <div
-            style={{
-              background: 'rgba(5, 8, 15, 0.7)',
-              borderLeft: '1px solid var(--border-subtle)',
-              padding: '28px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'flex-start',
-              overflowY: 'auto',
-            }}
-          >
-            <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
-                <Printer size={16} color="var(--accent-usb)" />
-                <span>Prévia ao Vivo na Bobina (58 mm)</span>
-              </div>
-              <span
-                style={{
-                  fontSize: '0.7rem',
-                  fontWeight: 700,
-                  color: 'var(--accent-bt)',
-                  background: 'rgba(14, 165, 233, 0.15)',
-                  padding: '2px 8px',
-                  borderRadius: '10px',
-                }}
-              >
-                32 Colunas
-              </span>
-            </div>
-
-            {/* Papel Térmico Virtual */}
+          {(!isMobile || mobileTab === 'preview') && (
             <div
               style={{
-                width: '304px',
-                background: '#f8fafc',
-                color: '#0f172a',
-                padding: '20px 14px',
-                borderRadius: '4px',
-                boxShadow: '0 20px 40px rgba(0, 0, 0, 0.7), 0 2px 10px rgba(0, 0, 0, 0.5)',
-                fontFamily: 'Consolas, "Courier New", monospace',
-                fontSize: '11px',
-                lineHeight: '1.28',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-                position: 'relative',
+                background: 'rgba(5, 8, 15, 0.7)',
+                borderLeft: isMobile ? 'none' : '1px solid var(--border-subtle)',
+                padding: isMobile ? '20px 16px' : '28px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'flex-start',
+                overflowY: 'auto',
+                flex: 1,
               }}
             >
-              {/* Efeito de Serrilha Superior */}
+              <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
+                  <Printer size={16} color="var(--accent-usb)" />
+                  <span>Prévia ao Vivo na Bobina (58 mm)</span>
+                </div>
+                <span
+                  style={{
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    color: 'var(--accent-bt)',
+                    background: 'rgba(14, 165, 233, 0.15)',
+                    padding: '2px 8px',
+                    borderRadius: '10px',
+                  }}
+                >
+                  32 Colunas
+                </span>
+              </div>
+
+              {/* Papel Térmico Virtual */}
               <div
                 style={{
-                  position: 'absolute',
-                  top: '-6px',
-                  left: 0,
-                  right: 0,
-                  height: '6px',
-                  background: 'radial-gradient(circle, transparent, transparent 50%, #f8fafc 50%, #f8fafc 100%)',
-                  backgroundSize: '12px 12px',
+                  width: isMobile ? '100%' : '304px',
+                  maxWidth: '304px',
+                  background: '#f8fafc',
+                  color: '#0f172a',
+                  padding: '20px 14px',
+                  borderRadius: '4px',
+                  boxShadow: '0 20px 40px rgba(0, 0, 0, 0.7), 0 2px 10px rgba(0, 0, 0, 0.5)',
+                  fontFamily: 'Consolas, "Courier New", monospace',
+                  fontSize: '11px',
+                  lineHeight: '1.28',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                  position: 'relative',
                 }}
-              />
-              {virtualPreview}
-            </div>
+              >
+                {/* Efeito de Serrilha Superior */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '-6px',
+                    left: 0,
+                    right: 0,
+                    height: '6px',
+                    background: 'radial-gradient(circle, transparent, transparent 50%, #f8fafc 50%, #f8fafc 100%)',
+                    backgroundSize: '12px 12px',
+                  }}
+                />
+                {virtualPreview}
+              </div>
 
-            <p style={{ margin: '20px 0 0 0', fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center', maxWidth: '280px', lineHeight: 1.4 }}>
-              💡 Os dados digitados alimentam automaticamente o cabeçalho e rodapé em todos os comprovantes, vendas e utilitários.
-            </p>
-          </div>
+              <p style={{ margin: '20px 0 0 0', fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center', maxWidth: '280px', lineHeight: 1.4 }}>
+                💡 Os dados digitados alimentam automaticamente o cabeçalho e rodapé em todos os comprovantes, vendas e utilitários.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

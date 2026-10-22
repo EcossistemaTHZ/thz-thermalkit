@@ -89,7 +89,7 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
   const [docTitle, setDocTitle] = useState('COMPROVANTE NÃO FISCAL');
 
   // 3. Controle / Pedido e Data
-  const [orderNumber, setOrderNumber] = useState('1042');
+  const [orderNumber, setOrderNumber] = useState('');
   const [date, setDate] = useState(() => {
     const now = new Date();
     return now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR');
@@ -122,14 +122,16 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
   useEffect(() => {
     const fetchCatalog = async () => {
       try {
-        const [prods, clis] = await Promise.all([
+        const [prods, clis, currentSeq] = await Promise.all([
           invoke<ProductDto[]>('list_products', { search: null }),
           invoke<ClientDto[]>('list_clients', { search: null }),
+          invoke<string>('get_current_sequence', { sequenceName: 'pos_receipt' }),
         ]);
         setCatalogProducts(prods);
         setCatalogClients(clis);
+        setOrderNumber((prev) => prev || currentSeq);
       } catch (err) {
-        console.error('Falha ao carregar catálogo para PDV:', err);
+        console.error('Falha ao carregar catálogo e sequência para PDV:', err);
       }
     };
     fetchCatalog();
@@ -238,15 +240,21 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
     setItems(newItems);
   };
 
-  // Iniciar Novo Pedido (limpa itens e incrementa nº do documento)
-  const handleNewOrder = () => {
+  // Iniciar Novo Pedido (limpa itens e gera próximo número sequencial com memória no SQLite)
+  const handleNewOrder = async () => {
     setItems([]);
     setCashReceived('');
     setDiscount(0);
     setOtherExpenses(0);
-    const num = parseInt(orderNumber, 10);
-    if (!isNaN(num)) {
-      setOrderNumber(String(num + 1));
+    try {
+      const nextSeq = await invoke<string>('get_next_sequence', { sequenceName: 'pos_receipt' });
+      setOrderNumber(nextSeq);
+    } catch (err) {
+      console.error('Falha ao gerar próximo número do PDV:', err);
+      const num = parseInt(orderNumber, 10);
+      if (!isNaN(num)) {
+        setOrderNumber(String(num + 1));
+      }
     }
     const now = new Date();
     setDate(now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR'));
@@ -419,12 +427,21 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
             <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
               <button
                 type="button"
-                className="btn-secondary"
-                style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+                className={`btn-secondary ${isStoreSaved ? 'active-toggle' : ''}`}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '0.75rem',
+                  borderColor: isStoreSaved ? 'var(--accent-usb)' : undefined,
+                  color: isStoreSaved ? 'var(--accent-usb)' : undefined,
+                }}
                 onClick={handleSaveStore}
               >
-                <Save size={13} color="var(--accent-usb)" />
-                <span>Salvar Dados</span>
+                {isStoreSaved ? (
+                  <CheckCircle2 size={13} color="var(--accent-usb)" />
+                ) : (
+                  <Save size={13} color="var(--accent-usb)" />
+                )}
+                <span>{isStoreSaved ? 'Dados Salvos!' : 'Salvar Dados'}</span>
               </button>
 
               {onOpenSettings && (
@@ -461,13 +478,30 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
         </div>
 
         <div>
-          <label className="pos-label">Nº Pedido / Controle</label>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+            <label className="pos-label" style={{ margin: 0 }}>Nº Pedido / Controle</label>
+            <button
+              type="button"
+              style={{ background: 'transparent', border: 'none', color: 'var(--accent-usb)', fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}
+              title="Avançar para o próximo número exclusivo (com memória e salto aleatório)"
+              onClick={async () => {
+                try {
+                  const nextSeq = await invoke<string>('get_next_sequence', { sequenceName: 'pos_receipt' });
+                  setOrderNumber(nextSeq);
+                } catch (e) {
+                  console.error(e);
+                }
+              }}
+            >
+              <RotateCcw size={11} /> Próximo
+            </button>
+          </div>
           <input
             className="pos-input"
             type="text"
             value={orderNumber}
             onChange={(e) => setOrderNumber(e.target.value)}
-            placeholder="1042"
+            placeholder="Gerando número..."
           />
         </div>
 
@@ -574,7 +608,7 @@ export const ReceiptBuilder: React.FC<ReceiptBuilderProps> = ({
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '90px 85px 140px auto 1fr', gap: '8px', alignItems: 'flex-end', marginTop: '4px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: '8px', alignItems: 'flex-end', marginTop: '4px' }}>
             <div>
               <label className="pos-label">Quantidade</label>
               <input

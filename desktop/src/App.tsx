@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import {
   PrinterDto,
@@ -18,6 +19,13 @@ import { TechAssistanceModule } from './components/TechAssistanceModule';
 import { BaseRegistersModule } from './components/BaseRegistersModule';
 import { OnboardingScreen } from './components/OnboardingModal';
 import { SettingsModal } from './components/SettingsModal';
+import { MobileAppLayout } from './components/MobileAppLayout';
+import {
+  isAndroidBluetoothAvailable,
+  listPairedBluetoothPrinters,
+  printRawBluetooth,
+  startBleScan,
+} from './utils/androidBluetooth';
 import {
   FileUp,
   FileText,
@@ -27,6 +35,8 @@ import {
   Printer,
   CheckCircle2,
   AlertCircle,
+  Info,
+  X,
   Briefcase,
   Wrench,
   Users
@@ -58,8 +68,22 @@ export const App: React.FC = () => {
   const [widthDots, setWidthDots] = useState<number>(384);
   const [codePage, setCodePage] = useState<number>(3); // CP860 Português
 
-  // Abas: 'tech' (Assistência Técnica O.S.), 'registers' (Cadastros Base), 'receipt' (PDV Balcão), 'word' (Word ESC/POS), 'templates' ou 'file'
-  const [activeTab, setActiveTab] = useState<'tech' | 'registers' | 'receipt' | 'word' | 'templates' | 'file'>('tech');
+  // Abas: 'tech' (Assistência Técnica O.S.), 'registers' (Cadastros Base), 'receipt' (PDV Balcão), 'word' (Word ESC/POS), 'templates', 'file' ou 'preview'
+  const [activeTab, setActiveTab] = useState<'tech' | 'registers' | 'receipt' | 'word' | 'templates' | 'file' | 'preview'>('tech');
+
+  // Detecção e alternância dinâmica Mobile / Desktop
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 850 || isAndroidBluetoothAvailable();
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 850 || isAndroidBluetoothAvailable());
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Textos compilados de cada aba
   const [compiledTechText, setCompiledTechText] = useState<string>('');
@@ -78,9 +102,9 @@ export const App: React.FC = () => {
   // Modal de Confirmação e Feedback
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
-  const showToast = (type: 'success' | 'error', message: string, duration = 4000) => {
+  const showToast = (type: 'success' | 'error' | 'info', message: string, duration = 3500) => {
     setToast({ type, message });
     setTimeout(() => {
       setToast((current) => (current?.message === message ? null : current));
@@ -137,7 +161,38 @@ export const App: React.FC = () => {
   const refreshPrinters = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      const list = await invoke<PrinterDto[]>('list_printers');
+      let list: PrinterDto[] = [];
+      try {
+        list = await invoke<PrinterDto[]>('list_printers');
+      } catch (_e) {
+        // Ignora caso list_printers seja Windows-only
+      }
+
+      if (isAndroidBluetoothAvailable()) {
+        try {
+          let btDevices = await listPairedBluetoothPrinters();
+
+          // Se não encontrou de imediato ou para varrer BLE próximo, inicia scan breve
+          if (btDevices.length === 0) {
+            startBleScan();
+            await new Promise((r) => setTimeout(r, 1500));
+            btDevices = await listPairedBluetoothPrinters();
+          }
+
+          const btPrinters: PrinterDto[] = btDevices.map((d) => ({
+            name: d.name,
+            display_info: d.isBle ? `Bluetooth BLE (${d.address})` : `Bluetooth SPP (${d.address})`,
+            is_bluetooth: true,
+            port: d.address,
+            transport_type: 'bluetooth',
+            target: d.address,
+          }));
+          list = [...btPrinters, ...list];
+        } catch (btErr) {
+          console.error('Falha ao listar Bluetooth no Android:', btErr);
+        }
+      }
+
       setPrinters(list);
 
       if (list.length > 0) {
@@ -229,18 +284,32 @@ export const App: React.FC = () => {
       const isDirect = activeTab !== 'file';
       const textToPrint = currentActiveText;
 
-      const req: PrintJobRequest = {
-        file_path: activeTab === 'file' ? preview?.file_path || null : null,
-        direct_text: isDirect ? textToPrint : null,
-        target_transport: selectedPrinter.transport_type,
-        target_param: selectedPrinter.target,
-        code_page: codePage,
-        width_dots: widthDots,
-      };
+      if (selectedPrinter.is_bluetooth && isAndroidBluetoothAvailable()) {
+        const base64Bytes = await invoke<string>('compile_escpos_bytes', {
+          directText: textToPrint,
+          codePage,
+        });
+        const res = await printRawBluetooth(selectedPrinter.target, base64Bytes);
+        if (res.success) {
+          showToast('success', `Impresso com sucesso via Bluetooth na ${selectedPrinter.name}!`);
+          setIsConfirmOpen(false);
+        } else {
+          showToast('error', `Erro Bluetooth: ${res.error || 'Falha de comunicação'}`, 6000);
+        }
+      } else {
+        const req: PrintJobRequest = {
+          file_path: activeTab === 'file' ? preview?.file_path || null : null,
+          direct_text: isDirect ? textToPrint : null,
+          target_transport: selectedPrinter.transport_type,
+          target_param: selectedPrinter.target,
+          code_page: codePage,
+          width_dots: widthDots,
+        };
 
-      const result = await invoke<string>('print_job', { req });
-      showToast('success', result);
-      setIsConfirmOpen(false);
+        const result = await invoke<string>('print_job', { req });
+        showToast('success', result);
+        setIsConfirmOpen(false);
+      }
     } catch (err) {
       showToast('error', `Erro na impressão: ${String(err)}`, 6000);
     } finally {
@@ -335,14 +404,75 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="app-container">
-      {/* Toast de Notificação */}
-      {toast && (
-        <div className={`toast-banner ${toast.type}`}>
-          {toast.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-          <span>{toast.message}</span>
-        </div>
-      )}
+    <>
+      {isMobile ? (
+        <MobileAppLayout
+          appConfig={appConfig}
+          storeProfile={storeProfile}
+          printers={printers}
+          selectedPrinter={selectedPrinter}
+          onSelectPrinter={setSelectedPrinter}
+          onRefreshPrinters={refreshPrinters}
+          isRefreshingPrinters={isRefreshing}
+          widthDots={widthDots}
+          onUpdateWidth={handleUpdateWidth}
+          activeTab={activeTab === 'file' ? 'preview' : activeTab}
+          onChangeTab={(tab) => setActiveTab(tab)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onPrintNow={() => setIsConfirmOpen(true)}
+          isPrinting={isPrinting}
+          canPrint={canPrint}
+          hasCompiledDocument={!!currentActiveText}
+          virtualPreview={virtualTextPreview}
+        >
+          {activeTab === 'tech' ? (
+            <TechAssistanceModule
+              widthDots={widthDots}
+              storeProfile={storeProfile}
+              onSendToPrint={(compiled) => {
+                setCompiledTechText(compiled);
+                setIsConfirmOpen(true);
+              }}
+              onNotification={showToast}
+            />
+          ) : activeTab === 'registers' ? (
+            <BaseRegistersModule onNotification={showToast} />
+          ) : activeTab === 'receipt' ? (
+            <ReceiptBuilder
+              widthDots={widthDots}
+              storeProfile={storeProfile}
+              onReceiptChange={setCompiledReceiptText}
+              onOpenSettings={() => setIsSettingsOpen(true)}
+            />
+          ) : activeTab === 'templates' ? (
+            <BusinessTemplates
+              widthDots={widthDots}
+              storeProfile={storeProfile}
+              onSelectForPrint={(compiled) => {
+                setTemplateText(compiled);
+                setIsConfirmOpen(true);
+              }}
+              onSendToWord={handleSendTemplateToWord}
+              showPreview={false}
+            />
+          ) : (
+            <WordEscPos
+              widthDots={widthDots}
+              storeProfile={storeProfile}
+              onTextChange={setWordEscPosText}
+              showPreview={false}
+            />
+          )}
+        </MobileAppLayout>
+      ) : (
+        <div className="app-container">
+          {/* Toast de Notificação */}
+          {toast && (
+            <div className={`toast-banner ${toast.type}`}>
+              {toast.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+              <span>{toast.message}</span>
+            </div>
+          )}
 
       {/* Cabeçalho Superior com Branding White-Label e Botão de Configurações */}
       <Header
@@ -577,30 +707,52 @@ export const App: React.FC = () => {
           </div>
         </main>
       </div>
-
-      {/* Modal de Configurações, White-Label e Backups */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        storeProfile={storeProfile || { name: 'MEU ESTABELECIMENTO', doc: '00.000.000/0001-00', onboarding_completed: false }}
-        appConfig={appConfig}
-        onSaveStore={handleSaveStoreProfile}
-        onSaveAppConfig={handleSaveAppConfig}
-        onNotification={showToast}
-      />
-
-      {/* Modal de Confirmação Pré-impressão */}
-      {selectedPrinter && (
-        <ConfirmModal
-          isOpen={isConfirmOpen}
-          onClose={() => setIsConfirmOpen(false)}
-          onConfirm={handleExecutePrint}
-          printer={selectedPrinter}
-          preview={virtualTextPreview}
-          isPrinting={isPrinting}
-        />
-      )}
     </div>
+  )}
+
+  {/* Modal de Configurações, White-Label e Backups */}
+  <SettingsModal
+    isOpen={isSettingsOpen}
+    onClose={() => setIsSettingsOpen(false)}
+    storeProfile={storeProfile || { name: 'MEU ESTABELECIMENTO', doc: '00.000.000/0001-00', onboarding_completed: false }}
+    appConfig={appConfig}
+    onSaveStore={handleSaveStoreProfile}
+    onSaveAppConfig={handleSaveAppConfig}
+    onNotification={showToast}
+  />
+
+  {/* Modal de Confirmação Pré-impressão */}
+  {selectedPrinter && (
+    <ConfirmModal
+      isOpen={isConfirmOpen}
+      onClose={() => setIsConfirmOpen(false)}
+      onConfirm={handleExecutePrint}
+      printer={selectedPrinter}
+      preview={virtualTextPreview}
+      isPrinting={isPrinting}
+    />
+  )}
+
+  {/* Toast Global Flutuante de Feedback */}
+  {toast && createPortal(
+    <div className={`global-toast-container ${toast.type}`}>
+      <div className="global-toast-icon">
+        {toast.type === 'success' && <CheckCircle2 size={18} color="var(--accent-usb)" />}
+        {toast.type === 'error' && <AlertCircle size={18} color="var(--accent-danger)" />}
+        {toast.type === 'info' && <Info size={18} color="var(--accent-bt)" />}
+      </div>
+      <div className="global-toast-message">{toast.message}</div>
+      <button
+        className="global-toast-close"
+        onClick={() => setToast(null)}
+        title="Fechar notificação"
+      >
+        <X size={14} />
+      </button>
+    </div>,
+    document.body
+  )}
+</>
   );
 };
 

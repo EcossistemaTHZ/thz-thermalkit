@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import {
@@ -16,6 +16,7 @@ import {
   Upload,
   RotateCcw,
   CheckCircle2,
+  AlertCircle,
   X,
   RefreshCw,
   FileSpreadsheet,
@@ -51,14 +52,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [store, setStore] = useState<StoreProfileDto>(storeProfile);
   const [config, setConfig] = useState<AppConfigDto>(appConfig);
 
+  // Auto-save feedback states
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [statusMessage, setStatusMessage] = useState<string>('');
+
+  // Refs de controle de sincronismo e debounce
+  const lastSavedStoreRef = useRef<string>(JSON.stringify(storeProfile));
+  const lastSavedConfigRef = useRef<string>(JSON.stringify(appConfig));
+  const storeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const configTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Stats and snapshots
   const [stats, setStats] = useState<DatabaseStatsDto | null>(null);
   const [snapshots, setSnapshots] = useState<ConfigSnapshotDto[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Atualiza estados quando modal abre ou props mudam
   useEffect(() => {
-    setStore(storeProfile);
-    setConfig(appConfig);
+    if (isOpen) {
+      setStore(storeProfile);
+      setConfig(appConfig);
+      lastSavedStoreRef.current = JSON.stringify(storeProfile);
+      lastSavedConfigRef.current = JSON.stringify(appConfig);
+      setSaveStatus('idle');
+    }
   }, [storeProfile, appConfig, isOpen]);
 
   const loadStatsAndSnapshots = async () => {
@@ -78,42 +95,105 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   }, [isOpen]);
 
+  // Auto-Save de Dados da Loja (Abas 'store', 'pix' e 'tech') via Debounce 750ms
+  useEffect(() => {
+    if (!isOpen) return;
+    const currentJson = JSON.stringify(store);
+    if (currentJson === lastSavedStoreRef.current) return;
+
+    setSaveStatus('saving');
+    setStatusMessage('Salvando...');
+
+    if (storeTimeoutRef.current) clearTimeout(storeTimeoutRef.current);
+    storeTimeoutRef.current = setTimeout(async () => {
+      try {
+        await onSaveStore(store);
+        lastSavedStoreRef.current = currentJson;
+        setSaveStatus('saved');
+        setStatusMessage('Salvo no SQLite');
+        loadStatsAndSnapshots();
+        setTimeout(() => {
+          setSaveStatus((prev) => (prev === 'saved' ? 'idle' : prev));
+        }, 2500);
+      } catch (err: any) {
+        setSaveStatus('error');
+        setStatusMessage('Erro ao salvar');
+        onNotification('error', err?.toString() || 'Erro ao salvar alterações no banco.');
+      }
+    }, 750);
+
+    return () => {
+      if (storeTimeoutRef.current) clearTimeout(storeTimeoutRef.current);
+    };
+  }, [store, isOpen, onSaveStore, onNotification]);
+
+  // Auto-Save de White-Label (Aba 'branding') via Debounce 750ms
+  useEffect(() => {
+    if (!isOpen) return;
+    const currentJson = JSON.stringify(config);
+    if (currentJson === lastSavedConfigRef.current) return;
+
+    setSaveStatus('saving');
+    setStatusMessage('Aplicando marca...');
+
+    if (configTimeoutRef.current) clearTimeout(configTimeoutRef.current);
+    configTimeoutRef.current = setTimeout(async () => {
+      try {
+        await onSaveAppConfig(config);
+        lastSavedConfigRef.current = currentJson;
+        setSaveStatus('saved');
+        setStatusMessage('Identidade aplicada');
+        loadStatsAndSnapshots();
+        setTimeout(() => {
+          setSaveStatus((prev) => (prev === 'saved' ? 'idle' : prev));
+        }, 2500);
+      } catch (err: any) {
+        setSaveStatus('error');
+        setStatusMessage('Erro ao salvar marca');
+        onNotification('error', err?.toString() || 'Erro ao aplicar identidade White-Label.');
+      }
+    }, 750);
+
+    return () => {
+      if (configTimeoutRef.current) clearTimeout(configTimeoutRef.current);
+    };
+  }, [config, isOpen, onSaveAppConfig, onNotification]);
+
+  // Fechamento seguro com Flush imediato de qualquer alteração pendente
+  const handleCloseWithFlush = async () => {
+    const storeJson = JSON.stringify(store);
+    if (storeJson !== lastSavedStoreRef.current) {
+      if (storeTimeoutRef.current) clearTimeout(storeTimeoutRef.current);
+      try {
+        await onSaveStore(store);
+        lastSavedStoreRef.current = storeJson;
+      } catch (err) {
+        console.error('Erro no flush de store:', err);
+      }
+    }
+
+    const configJson = JSON.stringify(config);
+    if (configJson !== lastSavedConfigRef.current) {
+      if (configTimeoutRef.current) clearTimeout(configTimeoutRef.current);
+      try {
+        await onSaveAppConfig(config);
+        lastSavedConfigRef.current = configJson;
+      } catch (err) {
+        console.error('Erro no flush de config:', err);
+      }
+    }
+
+    onClose();
+  };
+
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') handleCloseWithFlush();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
-  const handleSaveStore = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    try {
-      await onSaveStore(store);
-      onNotification('success', 'Dados do estabelecimento salvos com sucesso!');
-      loadStatsAndSnapshots();
-    } catch (err: any) {
-      onNotification('error', err?.toString() || 'Erro ao salvar dados do estabelecimento.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSaveConfig = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    try {
-      await onSaveAppConfig(config);
-      onNotification('success', 'Configurações White-Label aplicadas!');
-      loadStatsAndSnapshots();
-    } catch (err: any) {
-      onNotification('error', err?.toString() || 'Erro ao salvar configurações.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }, [isOpen, store, config]);
 
   const handleCreateBackup = async () => {
     setIsLoading(true);
@@ -221,7 +301,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="modal-backdrop" onClick={onClose} style={{ zIndex: 99998 }}>
+    <div className="modal-backdrop" onClick={handleCloseWithFlush} style={{ zIndex: 99998 }}>
       <div
         className="modal-box"
         onClick={(e) => e.stopPropagation()}
@@ -235,7 +315,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           overflow: 'hidden',
         }}
       >
-        {/* Topo do Modal */}
+        {/* Topo do Modal com Indicador de Auto-Save */}
         <div
           style={{
             padding: '16px 20px',
@@ -252,13 +332,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               Painel de Configurações & White-Label
             </h2>
           </div>
-          <button
-            className="btn-secondary"
-            style={{ padding: '6px' }}
-            onClick={onClose}
-          >
-            <X size={16} />
-          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {saveStatus === 'saving' && (
+              <div className="autosave-pill saving">
+                <RefreshCw size={12} className="spin-animation" />
+                <span>{statusMessage || 'Salvando alterações...'}</span>
+              </div>
+            )}
+            {saveStatus === 'saved' && (
+              <div className="autosave-pill saved">
+                <CheckCircle2 size={12} />
+                <span>{statusMessage || 'Salvo no SQLite'}</span>
+              </div>
+            )}
+            {saveStatus === 'error' && (
+              <div className="autosave-pill error">
+                <AlertCircle size={12} />
+                <span>{statusMessage || 'Erro ao salvar'}</span>
+              </div>
+            )}
+            {saveStatus === 'idle' && (
+              <div className="autosave-pill idle" title="Salvamento contínuo no banco SQLite">
+                <CheckCircle2 size={12} color="var(--accent-usb)" />
+                <span>Auto-save ativo</span>
+              </div>
+            )}
+
+            <button
+              className="btn-secondary"
+              style={{ padding: '6px' }}
+              onClick={handleCloseWithFlush}
+              title="Fechar (Esc)"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         {/* Abas */}
@@ -340,7 +449,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
           {/* Aba 1: Estabelecimento */}
           {tab === 'store' && (
-            <form onSubmit={handleSaveStore} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <form onSubmit={(e) => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '12px' }}>
                 <div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Nome Fantasia *</span>
@@ -477,18 +586,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-                <button type="submit" className="btn-primary usb" disabled={isLoading} style={{ gap: '8px' }}>
-                  <CheckCircle2 size={16} />
-                  <span>{isLoading ? 'Salvando...' : 'Salvar Alterações'}</span>
-                </button>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 14px',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-subtle)',
+                  marginTop: '8px',
+                }}
+              >
+                <CheckCircle2 size={14} color="var(--accent-usb)" />
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Auto-save ativo: Dados cadastrais da empresa sincronizados continuamente no banco SQLite.
+                </span>
               </div>
             </form>
           )}
 
           {/* Aba PIX: Pagamentos & QRCode */}
           {tab === 'pix' && (
-            <form onSubmit={handleSaveStore} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <form onSubmit={(e) => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div
                 style={{
                   padding: '12px 16px',
@@ -569,18 +689,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-                <button type="submit" className="btn-primary usb" disabled={isLoading} style={{ gap: '8px' }}>
-                  <CheckCircle2 size={16} />
-                  <span>{isLoading ? 'Salvando...' : 'Salvar Dados do PIX'}</span>
-                </button>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 14px',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-subtle)',
+                  marginTop: '8px',
+                }}
+              >
+                <CheckCircle2 size={14} color="var(--accent-usb)" />
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Auto-save ativo: Chave PIX e dados do recebedor sincronizados automaticamente para emissão e QR Code.
+                </span>
               </div>
             </form>
           )}
 
           {/* Aba Assistência Técnica: Prazos e CDC */}
           {tab === 'tech' && (
-            <form onSubmit={handleSaveStore} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <form onSubmit={(e) => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div
                 style={{
                   padding: '12px 16px',
@@ -637,18 +768,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-                <button type="submit" className="btn-primary usb" disabled={isLoading} style={{ gap: '8px' }}>
-                  <CheckCircle2 size={16} />
-                  <span>{isLoading ? 'Salvando...' : 'Salvar Termos de Assistência'}</span>
-                </button>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 14px',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-subtle)',
+                  marginTop: '8px',
+                }}
+              >
+                <CheckCircle2 size={14} color="var(--accent-usb)" />
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Auto-save ativo: Prazos de garantia e cláusulas legais do CDC gravados para as vias térmicas.
+                </span>
               </div>
             </form>
           )}
 
           {/* Aba White-Label */}
           {tab === 'branding' && (
-            <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <form onSubmit={(e) => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Título da Aplicação (App Name)</span>
@@ -703,11 +845,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-                <button type="submit" className="btn-primary usb" disabled={isLoading} style={{ gap: '8px' }}>
-                  <CheckCircle2 size={16} />
-                  <span>{isLoading ? 'Salvando...' : 'Aplicar Identidade White-Label'}</span>
-                </button>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 14px',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-subtle)',
+                  marginTop: '8px',
+                }}
+              >
+                <CheckCircle2 size={14} color="var(--accent-usb)" />
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Auto-save ativo: Identidade da marca, paleta de cores e largura da bobina atualizadas em tempo real.
+                </span>
               </div>
             </form>
           )}

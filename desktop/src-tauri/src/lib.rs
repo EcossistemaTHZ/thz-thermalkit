@@ -1,5 +1,3 @@
-#![cfg_attr(mobile, tauri::mobile_entry_point)]
-
 //! # THZ ThermalKit Desktop Backend (Tauri v2)
 //!
 //! Fornece comandos IPC assíncronos para a interface React, conectando o frontend
@@ -7,7 +5,6 @@
 
 use base64::Engine;
 use image::{DynamicImage, ImageFormat};
-use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use std::{
     env,
@@ -27,10 +24,11 @@ use db::{
     delete_client_db, delete_product_db, delete_service_db, export_receipts_csv_db,
     export_white_label_bundle_db, get_app_config_db, get_cash_summary_db,
     get_database_stats_db, get_store_profile_db, get_technical_order_db,
-    import_white_label_bundle_db, list_cash_movements_db, list_clients_db,
-    list_config_snapshots_db, list_products_db, list_receipt_history_db,
-    list_sales_db, list_services_db, list_technical_orders_db, rollback_config_snapshot_db,
-    save_app_config_db, save_client_db, save_product_db, save_receipt_history_db,
+    get_current_sequence_db, get_next_sequence_db, import_white_label_bundle_db,
+    list_cash_movements_db, list_clients_db, list_config_snapshots_db,
+    list_products_db, list_receipt_history_db, list_sales_db, list_services_db,
+    list_technical_orders_db, rollback_config_snapshot_db, save_app_config_db,
+    save_client_db, save_product_db, save_receipt_history_db,
     save_sale_db, save_service_db, save_store_profile_db, save_technical_order_db,
     update_order_status_db, vacuum_database_db, AppConfig, CashMovement, CashSummary,
     Client, ConfigSnapshot, DatabaseStats, OrderItem, Product, ReceiptHistoryItem,
@@ -96,11 +94,17 @@ fn list_printers() -> Result<Vec<PrinterDto>, String> {
 
 #[tauri::command]
 fn pick_document() -> Result<Option<String>, String> {
-    let file = FileDialog::new()
-        .add_filter("Documentos", &["txt", "png", "jpg", "jpeg", "pdf"])
-        .pick_file();
-
-    Ok(file.map(|p| p.to_string_lossy().to_string()))
+    #[cfg(windows)]
+    {
+        let file = rfd::FileDialog::new()
+            .add_filter("Documentos", &["txt", "png", "jpg", "jpeg", "pdf"])
+            .pick_file();
+        Ok(file.map(|p| p.to_string_lossy().to_string()))
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(None)
+    }
 }
 
 #[tauri::command]
@@ -387,14 +391,21 @@ fn create_database_backup(destination: Option<String>) -> Result<String, String>
     let path = match destination {
         Some(d) => d,
         None => {
-            let file = FileDialog::new()
-                .set_title("Salvar Backup do Banco de Dados (.db)")
-                .set_file_name(&format!("backup_thz_thermal_{}.db", chrono::Local::now().format("%Y%m%d_%H%M%S")))
-                .add_filter("SQLite Database", &["db", "sqlite"])
-                .save_file();
-            match file {
-                Some(p) => p.to_string_lossy().to_string(),
-                None => return Err("Operação de backup cancelada".into()),
+            #[cfg(windows)]
+            {
+                let file = rfd::FileDialog::new()
+                    .set_title("Salvar Backup do Banco de Dados (.db)")
+                    .set_file_name(&format!("backup_thz_thermal_{}.db", chrono::Local::now().format("%Y%m%d_%H%M%S")))
+                    .add_filter("SQLite Database", &["db", "sqlite"])
+                    .save_file();
+                match file {
+                    Some(p) => p.to_string_lossy().to_string(),
+                    None => return Err("Operação de backup cancelada".into()),
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                format!("backup_thz_thermal_{}.db", chrono::Local::now().format("%Y%m%d_%H%M%S"))
             }
         }
     };
@@ -451,6 +462,30 @@ fn list_receipt_history(limit: Option<u32>) -> Result<Vec<ReceiptHistoryItem>, S
 #[tauri::command]
 fn export_receipts_csv() -> Result<String, String> {
     export_receipts_csv_db()
+}
+
+#[tauri::command]
+fn get_next_sequence(sequence_name: String) -> Result<String, String> {
+    get_next_sequence_db(&sequence_name)
+}
+
+#[tauri::command]
+fn get_current_sequence(sequence_name: String) -> Result<String, String> {
+    get_current_sequence_db(&sequence_name)
+}
+
+#[tauri::command]
+fn compile_escpos_bytes(direct_text: String, code_page: Option<u8>) -> Result<String, String> {
+    use base64::Engine;
+    let cp = code_page.unwrap_or(3);
+    let mut bytes = vec![0x1b, b'@'];
+    bytes.extend_from_slice(&[0x1b, b't', cp]);
+    bytes.extend(text_bytes(&direct_text));
+    if !bytes.ends_with(b"\n") {
+        bytes.push(b'\n');
+    }
+    bytes.extend_from_slice(&[0x1b, b'd', 4, b'\n']);
+    Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
 }
 
 // ============================================================================
@@ -553,8 +588,17 @@ fn get_cash_summary() -> Result<CashSummary, String> {
     get_cash_summary_db()
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            use tauri::Manager;
+            if let Ok(data_dir) = app.path().app_data_dir() {
+                let _ = std::fs::create_dir_all(&data_dir);
+                db::set_app_data_dir(data_dir);
+            }
+            Ok(())
+        })
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             list_printers,
@@ -578,6 +622,9 @@ pub fn run() {
             save_receipt_history,
             list_receipt_history,
             export_receipts_csv,
+            get_next_sequence,
+            get_current_sequence,
+            compile_escpos_bytes,
             list_clients,
             save_client,
             delete_client,
